@@ -1,237 +1,393 @@
 # Anno Island Reskinner
 
-> **Note:** This README was generated with AI. I would really appreciate it if someone took the time to review it and improve it in a meaningful way. Contributions and corrections are very welcome.
+> **AI-generated documentation:** This README was created with AI assistance and should be reviewed and improved where necessary. Contributions and corrections are welcome.
 
 [☕ Support development on Ko-fi](http://www.ko-fi.com/gz2k2)
 
-**Anno Island Reskinner** is a desktop tool for editing, reskinning, adapting, and exporting Anno island/map data. It combines regional conversion settings, material-set handling, object editing, slot editing, tintmap patching, validation, repair helpers, and map export in one interface.
+**Anno Island Reskinner** is a desktop tool for editing, reskinning, adapting, validating, and exporting Anno 1800 island/map data. It combines regional conversion, material-set handling, tintmap patching, custom content, object editing, slot editing, XML validation/repair, and map export in one application.
 
-> **Important:** Always work on a copy of your island/map data. The application edits game/modding assets and some operations write changes back to the selected files.
+> **Important:** Always work on copies of your island and modding data. Some workflows intentionally write patched files or export generated data.
 
-## Features at a glance
+## Features
 
-- Select and manage the island/map files used by the editor
-- Change regional settings between **Old World**, **New World**, **Enbesa**, and **Arctic**
-- Work with material sets
-- Patch DDS tintmaps when converting an island to another region
-- Configure map objects and replace object categories/GUIDs
-- Use a visual **Object Map** to inspect and edit object placement
-- Add, move, rotate, and remove supported objects from the map workflow
-- Work with island slots through the **Slot Configuration** and visual **Slot Map** tools
+- Select and manage island/map files from `.a7m` projects
+- Create working maps from original map data or custom map folders
+- Convert regional settings between **Old World**, **New World**, **Enbesa**, and **Arctic**
+- Select, manage, and export material sets
+- Patch DDS tintmaps for regional conversions and brightness variants
+- Inspect, filter, replace, and edit RD3D objects
+- Add and manage custom objects, categories, and regions
+- Edit object placement visually in **Object Map**
+- Edit river, mine, deposit, and other supported slots in **Slot Map**
+- Keep supported map edits in RAM until **Save** is explicitly used
 - Validate and repair supported XML/slot structures
-- Preview changes in RAM before saving in map-based workflows
-- Export the processed map and related material-set data
+- Export cleaned map data for use in a mod project
+- Export only the custom content actually used by the current island
 
----
+## Typical workflow
 
-## Application workflow
+1. Select or create the island/map project in **Start** / **Files and Folders**.
+2. Configure paths and application settings if required.
+3. Select the target region and material set.
+4. Patch tintmaps if the island is being visually converted to another region.
+5. Adjust objects in **Object Configuration** and **Object Map**.
+6. Adjust island slots in **Slot Configuration** and **Slot Map**.
+7. Review validation results and warnings.
+8. Save the desired map/object/slot changes.
+9. Use **Finalize** to export the map and any required custom content.
 
-A typical workflow is:
+## Application areas
 
-1. Select the required island/map files in **Files and Folders**.
-2. Configure the target region and material settings in **Regional Settings**.
-3. Patch tintmaps when the island is being visually converted to another region.
-4. Adjust objects in **Object Configuration** and **Object Map**.
-5. Adjust coast, river, mine, and other supported slots in **Slot Configuration / Slot Map**.
-6. Review warnings or validation results.
-7. Save the modified data.
-8. Use **Finalize** to export the resulting map/material data.
+### Start / Files and Folders
 
----
+These workflows select the island data used by the editor and provide the paths required by later operations.
 
-## Files and Folders
+The application supports folder-based map workflows and can work with original map sources as well as custom map directories. Keep the full source directory structure intact because multiple workflows rely on related files rather than a single isolated XML file.
 
-The **Files and Folders** tab is the starting point for selecting the island/map data the application operates on.
+### Regional Settings
 
-The selected A7M/map location is reused by later workflows such as Regional Settings, Object Configuration, Slot Configuration, tintmap patching, and map export.
-
-For best results, keep the complete island directory structure intact rather than copying individual files out of their original folder hierarchy.
-
----
-
-## Regional Settings
-
-The **Regional Settings** tab controls the regional conversion of the selected island.
-
-Supported regions include:
+Regional conversion settings allow the island to be adapted between:
 
 - Old World
 - New World
 - Enbesa
 - Arctic
 
-Regional settings are used when adapting an island created for one region so that it can be used with assets/settings from another region.
+Regional conversion can affect multiple independent parts of an island, including material sets, object data, slots, and tintmaps.
 
-### Material Set
+### Texture Settings / Tintmaps
 
-Regional Settings includes selection of the material-set configuration used for the island. Material-set data can also be handled through the dedicated **Material Sets** workflow.
+The tintmap workflow patches supported DDS tintmaps for a selected source and target region.
 
-### Patch Tintmaps
+Brightness modes include:
 
-The **Patch Tintmaps** function modifies supported DDS tintmaps below the island's tintmap directory.
+- **Normal**: regional conversion without an extra brightness offset
+- **Brighter**: adds the configured positive RGB offset
+- **Darker**: adds the configured negative RGB offset
 
-Select:
+The patcher uses backups and patch-state information to avoid unintentionally applying the same conversion repeatedly. If a tracked DDS file was changed externally, the application can report a conflict instead of silently overwriting it.
 
-- **From:** source region
-- **To:** target region
-- **Brightness:** additional brightness treatment
+Tintmap processing may create an internal helper/cache directory named:
 
-Brightness options:
-
-| Setting | Effect |
-|---|---|
-| `Normal` | Uses the normal regional conversion without an additional brightness offset |
-| `Brighter` | Applies the configured positive RGB brightness offset |
-| `Darker` | Applies the configured negative RGB brightness offset |
-
-The brightness offsets are defined centrally in `functions_tintmaps.py`:
-
-```python
-BRIGHTER_RGB_OFFSET = (12, 12, 12)
-DARKER_RGB_OFFSET = (-12, -12, -12)
+```text
+_tintmap_variants/
 ```
 
-The tintmap patcher maintains original backups and persistent patch state. Source region, target region, brightness mode, patch routine version, and file state are used to detect an already processed configuration. Repeating the same successful configuration therefore does not intentionally apply the same conversion cumulatively again.
+This directory is used by the editing workflow and is **not included by Export Map**.
 
-If source and target region are identical and brightness is `Normal`, the patcher restores the original tintmap where an original backup is available.
+### Material Sets
 
----
+Material sets can be selected and handled as part of the regional/finalization workflow.
 
-## Material Sets
+When **Export custom content files** exports the active material set, the resulting structure is:
 
-The **Material Sets** section is used to work with the material-set configuration associated with the island.
+```text
+<export folder>/
+└── data/
+    └── config/
+        └── engine/
+            └── material_sets/
+                ├── <name>.materialset
+                └── <name>.xml.lnk
+```
 
-The application can prepare/export material-set data as part of the final modding workflow. Regional Settings and Material Sets are linked through the selected `MaterialSetFileName`.
+The `.xml.lnk` points to:
 
----
+```text
+data/config/engine/material_sets/<name>.materialset
+```
 
-## Object Configuration
+### Custom Content
 
-The **Object Configuration** tab provides table-based tools for inspecting and modifying object data used by the island.
+The **Custom Content** workflow allows user-defined objects, categories, and regions to be integrated into the existing object-selection and editing workflows.
 
-Available workflows include object/category filtering and replacement operations, including mass replacement of supported GUID/object references.
+Custom definitions are stored separately from the built-in object database, so the base database does not need to be modified for every custom object.
+
+The application can merge custom objects dynamically into object tables, category pickers, replace workflows, and place-object workflows.
+
+#### Custom Objects Folder
+
+The **Custom Objects Folder** contains the physical custom object files referenced by the custom object definitions.
+
+When **Export custom content files** is used, the application does **not** blindly copy the entire Custom Objects Folder. It exports the custom objects that are registered and actually used by the current island.
+
+For every used `.prp`, its directory structure relative to the configured Custom Objects Folder is preserved.
+
+Example source:
+
+```text
+<Custom Objects Folder>/
+└── data/
+    └── graphics/
+        └── props/
+            └── custom/
+                └── example.prp
+```
+
+Export result:
+
+```text
+<export folder>/
+└── custom_objects/
+    └── data/
+        └── graphics/
+            └── props/
+                └── custom/
+                    └── example.prp
+```
+
+This allows exported custom object files to retain the directory hierarchy in which they were found.
+
+### Object Configuration
+
+The **Object Configuration** tab contains table-based tools for inspecting and modifying object data used by the island.
+
+Supported workflows include:
+
+- filtering objects and categories
+- mass replacement
+- GUID/object replacement
+- density changes
+- custom object integration
+- opening the visual Object Map
 
 ### Object Map
 
-The **Object Map** provides a visual map representation of object positions.
+The **Object Map** provides a visual representation of object positions.
 
-It supports workflows such as:
+Depending on the current editing state it supports:
 
-- viewing object positions as colored dots
-- category-aware coloring
-- filtering the displayed objects
-- selecting an area of objects
+- category-aware object coloring
+- filtering visible object categories
+- rectangle selection
+- Ctrl-based lasso selection
 - adding objects
-- moving supported dots when **Allow Dot Movement** is enabled
-- moving all selected objects together when a selection area is active
-- previewing edits before Save
-- Reload / Reset / Save workflows
+- removing objects
+- changing object density inside a selected area
+- moving supported dots
+- moving selected objects together
+- previewing edits before saving
+- Save / Reload / Reset workflows
 
-The normal selection rectangle is blue. When dot movement mode is active, the selection rectangle is displayed in red.
+Map editing is designed around a RAM working state where supported changes remain unsaved until the corresponding **Save** action is used.
 
-Clicking outside an existing selection area clears that selection. `Esc` can also clear the selection.
+### Slot Configuration / Slot Map
 
-### Add / Place Object
+Slot editing covers supported island slot data such as river, mine, and resource/deposit slots.
 
-Objects can be placed from the Object Map through the Add/Place Object popup.
+The visual **Slot Map** can provide operations for:
 
-The popup provides two selection modes:
+- selecting slots
+- adding slots
+- removing slots
+- moving slots
+- rotating supported slots
+- changing GUIDs
+- rectangle/lasso selection
+- validating MapName/Gamedata relationships
+- Save / Reload / Reset workflows
 
-- **Category**
-- **Object**
+Slot Map changes are kept in a working state and are written by the explicit Save workflow. Validation is performed before synchronized XML changes are installed.
 
-The lists can be filtered by text and region. The Treeview columns can be sorted by clicking their headings. Entries use the same category coloring concept as the Object Map.
+### Validation and XML repair
 
-Select a row and use **Select** to accept the chosen category/object. For a category selection, the application uses the objects associated with that category for placement.
+The project contains dedicated validation and repair functionality for supported XML structures.
 
----
-
-## Slot Configuration
-
-The **Slot Configuration** tools are intended for editing island slot data and supported slot/object assignments.
-
-The editor contains dedicated handling for slot types used by the island data, including river and mine related workflows and GUID replacement operations.
-
-### Slot Map
-
-The visual **Slot Map** allows supported slots to be inspected and edited directly on a map representation.
-
-Depending on the selected slot type and available data, the map workflow contains operations for changing slot-related object data, rotation/orientation, selection, saving, reloading, and resetting edits.
-
-Selection areas can be cleared with `Esc` or by left-clicking outside the existing selection rectangle.
-
----
-
-## Validation and XML repair
-
-The project contains dedicated validation and XML-repair functionality used by the editing workflows.
-
-These checks are particularly important when slot/object changes would otherwise leave incompatible or incomplete XML structures. Validation warnings should be reviewed before final export instead of being ignored blindly.
-
----
-
-## RAM-based editing and Save / Reload / Reset
-
-Several map-editing workflows keep changes in an in-memory editing state before writing the changes to the island data.
-
-This allows the map view to preview changes before **Save**.
-
-Typical controls include:
-
-- **Save**: write the current edits
-- **Reload**: reload the relevant data
-- **Reset**: discard/reset the current editing state for that workflow
-
-Pay attention to status popups/messages while longer XML, RD3D, cache, tintmap, or export operations are running.
-
----
+Validation is especially important when MapName and Gamedata references are changed. Do not ignore reported mismatches blindly. Review GUID, ObjectId, position, and slot-integration warnings before distributing an exported island.
 
 ## Finalize and Export
 
-The **Finalize** workflow prepares output from the edited island.
+### Export Map
 
-The project includes dedicated export handling for:
+**Export Map** creates a filtered copy of the selected map directory.
 
-- map export
-- material-set export
+The export intentionally excludes development/editing artifacts such as supported backup/original data and XML working files according to the export filter.
 
-Map export writes the selected island/map data to the configured export destination. If the destination map folder already exists, the application can explicitly request replacement of that exported map folder.
+In addition, the following tintmap helper directory is explicitly excluded wherever it occurs in the map tree:
 
-Review any reported warnings before using the exported files in a mod project.
+```text
+_tintmap_variants/
+```
 
----
+The export is staged before replacing an existing confirmed destination. This reduces the chance that a cancelled or failed export destroys the previous exported map.
 
-## Tintmap safety and repeat processing
+### Export custom content files
 
-Tintmap patching has additional safeguards because repeated color conversion would otherwise progressively alter the textures.
+This export is separate from **Export Map** and collects the additional content required by the current island.
 
-The patcher therefore uses:
+It can export:
 
-- `.tintmap_original` backup files
-- `tintmap_patch_state.json`
-- SHA-256 checks
-- source region
-- target region
-- brightness mode
-- patch routine version
+- the selected material set
+- the corresponding `.xml.lnk`
+- used custom `.prp` objects
 
-If a DDS covered by the stored patch state was modified externally, the patcher reports a conflict rather than silently overwriting the changed file.
+Material sets are exported under:
 
----
+```text
+data/config/engine/material_sets/
+```
 
-## Notes for modding projects
+Custom objects are exported under:
 
-- Keep backups of original islands and exported mod data.
-- Test exported islands in a development/test mod before distributing them.
-- Do not manually delete tintmap backup/state files unless you understand the effect on subsequent tintmap conversion.
-- When moving an island between regions, remember that the workflow may involve several independent layers: regional settings, material sets, RD3D/object data, slots, and tintmaps.
-- Use the visual map editors for spatial changes, but review the corresponding configuration/validation output before final export.
+```text
+custom_objects/
+```
 
----
+with their directory hierarchy relative to **Custom Objects Folder** preserved.
+
+Only custom object files actually used by the current island are included.
+
+## Project structure
+
+The application source is organized as a Python package:
+
+```text
+Anno Island Reskinner.py
+00_build_onefile.py
+version.txt
+
+app/
+├── main.py
+├── backend/
+│   └── xml_backend.py
+├── config/
+│   ├── config_colors.py
+│   ├── config_gamedata.py
+│   ├── config_rd3d.py
+│   └── config_slot.py
+├── database/
+│   └── database_props.py
+├── functions/
+│   ├── function_custom_content.py
+│   ├── function_density.py
+│   ├── function_island_slots.py
+│   ├── function_map_export.py
+│   ├── function_map_selection.py
+│   ├── function_place_object.py
+│   ├── function_region.py
+│   ├── function_slot_validation.py
+│   ├── function_xml_repair.py
+│   └── functions_tintmaps.py
+├── templates/
+│   ├── template_category_picker.py
+│   ├── template_map_view.py
+│   ├── template_popup.py
+│   ├── template_profiles.py
+│   ├── template_statuswindow.py
+│   ├── template_table.py
+│   └── template_treeview.py
+└── ui/
+    ├── ui.py
+    └── tabs/
+        ├── ui_tab_custom_content.py
+        ├── ui_tab_files_and_folders.py
+        ├── ui_tab_finalize.py
+        ├── ui_tab_helpers.py
+        ├── ui_tab_material_sets.py
+        ├── ui_tab_object_configuration.py
+        ├── ui_tab_regional_settings.py
+        ├── ui_tab_settings.py
+        ├── ui_tab_slot_configuration.py
+        ├── ui_tab_start.py
+        └── ui_tab_texture_settings.py
+
+tests/
+├── test_native_deposit_integration.py
+├── test_original_deposit_variants.py
+├── test_slot_validation.py
+└── test_xml_repair.py
+```
+
+Each Python package directory contains its own `__init__.py`.
+
+The `tests/` package is for development/testing and is not required by the application at runtime.
+
+## Running from source
+
+A Python environment with the application's dependencies is required. The GUI uses CustomTkinter/Pillow and the current XML backend uses lxml.
+
+Start the application from the project root with:
+
+```bash
+python "Anno Island Reskinner.py"
+```
+
+For development, run tests from the project root with:
+
+```bash
+python -m pytest
+```
+
+## Building the Windows executable
+
+The repository contains:
+
+```text
+00_build_onefile.py
+```
+
+It validates the expected project/package structure and builds the Windows application with PyInstaller.
+
+Run:
+
+```bash
+python 00_build_onefile.py
+```
+
+The application version is read from:
+
+```text
+version.txt
+```
+
+If `version.txt` contains:
+
+```text
+0.107.24
+```
+
+the generated executable is named:
+
+```text
+Anno_Island_Reskinner_0.107.24.exe
+```
+
+The build is written to the `dist/` directory.
+
+The `tests/` package is intentionally excluded from the application executable.
+
+## GitHub releases
+
+The GitHub Actions release workflow uses `version.txt` as the release version and calls the same `00_build_onefile.py` builder used for local builds.
+
+For a tagged release, the Git tag should match the version in `version.txt`:
+
+```text
+version.txt: 0.107.24
+Git tag:     v0.107.24
+```
+
+A mismatch is intended to stop the release workflow rather than publishing an incorrectly versioned executable.
+
+## Safety and project notes
+
+- Keep backups of original islands and mod data.
+- Prefer working on copies rather than irreplaceable game/modding files.
+- Test exported islands in a development/test mod before distribution.
+- Keep the complete source folder structure available while editing.
+- Do not manually remove tintmap backup/state files unless you understand how this affects later patch operations.
+- Remember that regional settings, material sets, tintmaps, RD3D objects, and slots are separate layers of the conversion workflow.
+- Review validation warnings before final export.
+- Use the status/progress windows for long operations instead of assuming the application has stalled.
+
+## Contributing
+
+Bug reports, corrections, documentation improvements, and code contributions are welcome.
+
+Because this README was initially AI-generated, manual review and corrections are especially appreciated whenever application behavior changes.
 
 ## Support
 
 If the tool is useful to you and you want to support continued development:
 
-**Ko-fi:** http://www.ko-fi.com/gz2k2
-
+**Ko-fi:** [http://www.ko-fi.com/gz2k2](http://www.ko-fi.com/gz2k2)

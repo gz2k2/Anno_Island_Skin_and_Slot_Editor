@@ -2,11 +2,9 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
     tags:
-      - 'v*' # Trigger bei Tags wie v1.0, v0.1.0-beta, etc.
-  workflow_dispatch: # Ermöglicht das manuelle Starten über die GitHub-Webseite
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,10 +12,9 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'v')
-    
+
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -25,47 +22,88 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install PyQt6 pyinstaller
-
-      - name: Read Version and Changelog
-        id: get_version
+      - name: Install dependencies
         shell: pwsh
         run: |
-          $v = Get-Content version.txt -Raw
-          echo "VERSION=$($v.Trim())" >> $env:GITHUB_OUTPUT
-          
-          # Read changelog and handle multiline output for GitHub Actions
-          $changelog = Get-Content changelog.md -Raw
-          echo "CHANGELOG<<EOF" >> $env:GITHUB_OUTPUT
-          echo $changelog >> $env:GITHUB_OUTPUT
-          echo "EOF" >> $env:GITHUB_OUTPUT
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller customtkinter pillow
 
-      - name: Build EXE with PyInstaller
+      - name: Read version
+        id: version
+        shell: pwsh
         run: |
-          pyinstaller --onefile --windowed --icon "data/ui/AnnoXMLTool.ico" --name "Anno_XML_Viewer_v${{ steps.get_version.outputs.VERSION }}" --add-data "data/ui/kofi5.webp;data/ui" --add-data "version.txt;." --add-data "data/ui/AnnoXMLTool.ico;data/ui" Anno_XML_Viewer.py
+          if (-not (Test-Path 'version.txt')) {
+            throw 'version.txt was not found.'
+          }
 
-      - name: Create Release
-        id: create_release
+          $version = (Get-Content 'version.txt' -Raw).Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'version.txt is empty.'
+          }
+
+          "VERSION=$version" >> $env:GITHUB_OUTPUT
+          "TAG=v$version" >> $env:GITHUB_OUTPUT
+          "EXE=Anno_Island_Reskinner_$version.exe" >> $env:GITHUB_OUTPUT
+
+      - name: Validate tag version
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $expected = '${{ steps.version.outputs.TAG }}'
+          $actual = '${{ github.ref_name }}'
+          if ($actual -ne $expected) {
+            throw "Tag '$actual' does not match version.txt ('$expected')."
+          }
+
+      - name: Build one-file EXE
+        shell: pwsh
+        run: |
+          python 00_build_onefile.py
+
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          $exe = Join-Path 'dist' '${{ steps.version.outputs.EXE }}'
+          if (-not (Test-Path $exe)) {
+            throw "Expected executable was not created: $exe"
+          }
+          Get-Item $exe | Format-List Name, Length, FullName
+
+      - name: Read changelog
+        id: changelog
+        shell: pwsh
+        run: |
+          if (Test-Path 'changelog.md') {
+            $content = Get-Content 'changelog.md' -Raw
+          } else {
+            $content = 'No changelog.md was included in this release.'
+          }
+
+          $delimiter = "CHANGELOG_$([guid]::NewGuid().ToString('N'))"
+          "BODY<<$delimiter" >> $env:GITHUB_OUTPUT
+          $content >> $env:GITHUB_OUTPUT
+          $delimiter >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Anno_XML_Viewer_v${{ steps.get_version.outputs.VERSION }}.exe
-          name: ${{ github.ref_type == 'tag' && format('v{0}', steps.get_version.outputs.VERSION) || format('v{0}', steps.get_version.outputs.VERSION) }}
-          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: Anno Island Reskinner v${{ steps.version.outputs.VERSION }}
+          target_commitish: ${{ github.sha }}
+          files: dist/${{ steps.version.outputs.EXE }}
           draft: false
-          prerelease: ${{ github.ref_type != 'tag' }}
+          prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: true
           body: |
-            Automatic build of version ${{ steps.get_version.outputs.VERSION }}.
+            ## Anno Island Reskinner v${{ steps.version.outputs.VERSION }}
 
-            ${{ steps.get_version.outputs.CHANGELOG }}
+            Automatic Windows one-file build created with the project's `00_build_onefile.py` builder.
 
-            ### Changes
-            See the automatic release notes below or the commit history.
-            
+            ### Changelog
+            ${{ steps.changelog.outputs.BODY }}
+
             ### Download
-            You can find the executable file in the Assets section below.
+            Download `${{ steps.version.outputs.EXE }}` from the Assets section below.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
