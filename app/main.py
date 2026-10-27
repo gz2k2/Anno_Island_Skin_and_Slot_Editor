@@ -100,8 +100,8 @@ def get_bundle_dir() -> Path:
 BUNDLE_DIR = get_bundle_dir()
 
 VERSION_FILE = BUNDLE_DIR / "version.txt"
-REMOTE_VERSION_URL = "https://raw.githubusercontent.com/gz2k2/anno_1800_island_reskinner/refs/heads/main/version.txt"
-UPDATE_PAGE_URL = "https://github.com/gz2k2/anno_1800_island_reskinner"
+REMOTE_VERSION_URL = "https://raw.githubusercontent.com/gz2k2/Anno_Island_Skin_and_Slot_Editor/refs/heads/main/version.txt"
+UPDATE_PAGE_URL = "https://github.com/gz2k2/Anno_Island_Skin_and_Slot_Editor"
 
 def read_local_version() -> str:
     try:

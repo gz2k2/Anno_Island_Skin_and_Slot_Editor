@@ -53,7 +53,10 @@ def export_map(source, destination, stop_event, progress, *, overwrite=False):
     for folder, dirs, names in os.walk(source, followlinks=False, onerror=walk_error):
         check_stop()
         folder = Path(folder)
-        dirs[:] = sorted((n for n in dirs if not excluded_name(n)), key=str.casefold)
+        dirs[:] = sorted(
+            (n for n in dirs if not excluded_name(n) and n.casefold() != '_tintmap_variants'),
+            key=str.casefold,
+        )
         for name in dirs:
             path = folder / name
             if path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()):

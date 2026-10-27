@@ -431,12 +431,12 @@ class FinalizeTabMixin:
                 source = Path(source)
                 export_items.append((
                     source,
-                    Path(f'{source.stem}.materialset'),
+                    Path('data/config/engine/material_sets') / f'{source.stem}.materialset',
                     'Material Set',
                 ))
                 export_items.append((
                     None,
-                    Path(f'{source.stem}.xml.lnk'),
+                    Path('data/config/engine/material_sets') / f'{source.stem}.xml.lnk',
                     f'data/config/engine/material_sets/{source.stem}.materialset',
                 ))
 

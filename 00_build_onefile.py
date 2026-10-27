@@ -7,8 +7,8 @@ from pathlib import Path
 # ============================================================
 # Configuration
 # ============================================================
-LAUNCHER_NAME = "Anno_Island_Reskinner.py"
-APP_NAME_BASE = "Anno_Island_Reskinner"
+LAUNCHER_NAME = "Anno_Island_Editor.py"
+APP_NAME_BASE = "Anno_Island_Skin_and_Slot_Editor"
 VERSION_FILE = "version.txt"
 WINDOWED = True
 ONEFILE = True
@@ -97,7 +97,7 @@ def read_version():
 
 
 APP_VERSION = read_version()
-APP_NAME = f"{APP_NAME_BASE}_{APP_VERSION}"
+APP_NAME = f"{APP_NAME_BASE}_v{APP_VERSION}"
 
 LAUNCHER_PATH = BASE_DIR / LAUNCHER_NAME
 APP_DIR = BASE_DIR / "app"
