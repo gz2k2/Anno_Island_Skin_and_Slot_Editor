@@ -1,0 +1,23 @@
+# python
+__pycache__
+__pycache__/
+*pycache*/
+*.pyc
+
+# pyinstaller
+build/
+dist/
+*.spec
+
+# custom configs
+*.ini
+*settings.json
+*.json
+custom_profiles/
+errorlog.md
+z_errorlog.md
+00_errorlog.md
+*.csv
+
+# backup folder
+backups/

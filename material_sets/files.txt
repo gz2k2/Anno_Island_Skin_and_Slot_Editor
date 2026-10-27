@@ -1,0 +1,32 @@
+ Volume in Laufwerk C: hat keine Bezeichnung.
+ Volumeseriennummer: 6C98-1E9A
+
+ Verzeichnis von C:\source\Anno-FileDBReader-GUI\material_sets
+
+26.10.2026  07:06                51 arctic.xml.lnk
+26.10.2026  07:06                72 arctic_to_enbesa-scenario02.xml.lnk
+26.10.2026  07:06                61 arctic_to_enbesa.xml.lnk
+26.10.2026  07:06                57 arctic_to_nw.xml.lnk
+26.10.2026  07:06                57 arctic_to_ow.xml.lnk
+26.10.2026  07:06                62 enbesa-scenario02.xml.lnk
+26.10.2026  07:06                72 enbesa-scenario02_to_arctic.xml.lnk
+26.10.2026  07:06                72 enbesa-scenario02_to_enbesa.xml.lnk
+26.10.2026  07:06                68 enbesa-scenario02_to_nw.xml.lnk
+26.10.2026  07:06                68 enbesa-scenario02_to_ow.xml.lnk
+26.10.2026  07:06                52 enbesa_.xml.lnk
+26.10.2026  07:06                61 enbesa_to_arctic.xml.lnk
+26.10.2026  07:06                72 enbesa_to_enbesa-scenario02.xml.lnk
+26.10.2026  07:06                57 enbesa_to_nw.xml.lnk
+26.10.2026  07:06                57 enbesa_to_ow.xml.lnk
+26.10.2026  07:06                47 nw.xml.lnk
+26.10.2026  07:06                57 nw_to_arctic.xml.lnk
+26.10.2026  07:06                68 nw_to_enbesa-scenario02.xml.lnk
+26.10.2026  07:06                57 nw_to_enbesa.xml.lnk
+26.10.2026  07:06                53 nw_to_ow.xml.lnk
+26.10.2026  07:06                47 ow.xml.lnk
+26.10.2026  07:06                57 ow_to_arctic.xml.lnk
+26.10.2026  07:06                68 ow_to_enbesa-scenario02.xml.lnk
+26.10.2026  07:06                57 ow_to_enbesa.xml.lnk
+26.10.2026  07:06                53 ow_to_nw.xml.lnk
+              25 Datei(en),          1.503 Bytes
+               0 Verzeichnis(se), 43.176.140.800 Bytes frei
