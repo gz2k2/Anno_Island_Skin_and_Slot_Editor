@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -20,90 +20,96 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
+          cache: pip
 
       - name: Install dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller customtkinter pillow
+          python -m pip install pyinstaller customtkinter pillow lxml
 
-      - name: Read version
+      - name: Read and validate version
         id: version
         shell: pwsh
         run: |
-          if (-not (Test-Path 'version.txt')) {
-            throw 'version.txt was not found.'
+          if (-not (Test-Path "version.txt")) {
+            throw "version.txt was not found."
           }
 
-          $version = (Get-Content 'version.txt' -Raw).Trim()
+          $version = (Get-Content "version.txt" -Raw).Trim()
           if ([string]::IsNullOrWhiteSpace($version)) {
-            throw 'version.txt is empty.'
+            throw "version.txt is empty."
           }
+          if ($version -notmatch '^\d+(\.\d+){1,3}([-.][0-9A-Za-z.-]+)?$') {
+            throw "Invalid version in version.txt: '$version'"
+          }
+
+          $tag = "v$version"
+          $exe = "Anno_Island_Skin_and_Slot_Editor_v$version.exe"
 
           "VERSION=$version" >> $env:GITHUB_OUTPUT
-          "TAG=v$version" >> $env:GITHUB_OUTPUT
-          "EXE=Anno_Island_Reskinner_$version.exe" >> $env:GITHUB_OUTPUT
+          "TAG=$tag" >> $env:GITHUB_OUTPUT
+          "EXE=$exe" >> $env:GITHUB_OUTPUT
 
-      - name: Validate tag version
+      - name: Validate pushed tag
         if: github.ref_type == 'tag'
         shell: pwsh
         run: |
-          $expected = '${{ steps.version.outputs.TAG }}'
-          $actual = '${{ github.ref_name }}'
+          $expected = "${{ steps.version.outputs.TAG }}"
+          $actual = "${{ github.ref_name }}"
           if ($actual -ne $expected) {
             throw "Tag '$actual' does not match version.txt ('$expected')."
           }
 
-      - name: Build one-file EXE
+      - name: Validate required project files
         shell: pwsh
         run: |
-          python 00_build_onefile.py
+          $required = @(
+            "00_build_onefile.py",
+            "Anno_Island_Editor.py",
+            "version.txt",
+            "app",
+            "material_sets"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "Required project path was not found: $path"
+            }
+          }
+
+      - name: Build one-file EXE
+        shell: pwsh
+        run: python 00_build_onefile.py
 
       - name: Verify build output
         shell: pwsh
         run: |
-          $exe = Join-Path 'dist' '${{ steps.version.outputs.EXE }}'
-          if (-not (Test-Path $exe)) {
+          $exe = Join-Path "dist" "${{ steps.version.outputs.EXE }}"
+          if (-not (Test-Path $exe -PathType Leaf)) {
+            Write-Host "Files currently present in dist:"
+            Get-ChildItem "dist" -Recurse -ErrorAction SilentlyContinue
             throw "Expected executable was not created: $exe"
           }
           Get-Item $exe | Format-List Name, Length, FullName
 
-      - name: Read changelog
-        id: changelog
-        shell: pwsh
-        run: |
-          if (Test-Path 'changelog.md') {
-            $content = Get-Content 'changelog.md' -Raw
-          } else {
-            $content = 'No changelog.md was included in this release.'
-          }
-
-          $delimiter = "CHANGELOG_$([guid]::NewGuid().ToString('N'))"
-          "BODY<<$delimiter" >> $env:GITHUB_OUTPUT
-          $content >> $env:GITHUB_OUTPUT
-          $delimiter >> $env:GITHUB_OUTPUT
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anno-Island-Reskinner-${{ steps.version.outputs.VERSION }}
+          path: dist/${{ steps.version.outputs.EXE }}
+          if-no-files-found: error
 
       - name: Create GitHub release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.TAG }}
-          name: Anno Island Reskinner v${{ steps.version.outputs.VERSION }}
-          target_commitish: ${{ github.sha }}
+          name: Anno Island Reskinner ${{ steps.version.outputs.TAG }}
           files: dist/${{ steps.version.outputs.EXE }}
-          draft: false
-          prerelease: false
+          body_path: changelog.md
           generate_release_notes: true
           fail_on_unmatched_files: true
-          body: |
-            ## Anno Island Reskinner v${{ steps.version.outputs.VERSION }}
-
-            Automatic Windows one-file build created with the project's `00_build_onefile.py` builder.
-
-            ### Changelog
-            ${{ steps.changelog.outputs.BODY }}
-
-            ### Download
-            Download `${{ steps.version.outputs.EXE }}` from the Assets section below.
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
