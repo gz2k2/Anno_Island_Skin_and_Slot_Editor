@@ -29,7 +29,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller customtkinter pillow lxml
+          python -m pip install -r requirements.txt
 
       - name: Read Version and Changelog
         id: get_version

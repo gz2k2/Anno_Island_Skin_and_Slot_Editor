@@ -43,24 +43,54 @@ class UIMixin(CustomContentTabMixin, HelpersTabMixin, SettingsTabMixin, Material
     mutation intentionally remain in the main App class.
     """
     def _show_update_available(self, remote_version):
-        popup = PopupTemplate.create_window(
-            self,
-            title="Update available",
-            heading="Update available",
-            geometry="520x250",
-            resizable=False,
-            modal=False,
-            close_command=window.destroy if False else None,
-        )
-        window = popup["window"]
+        existing = getattr(self, "_update_available_window", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.deiconify()
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except (tk.TclError, AttributeError):
+                self._update_available_window = None
+
+        # Do not use PopupTemplate here. The update check can finish while the
+        # main window is still completing its startup/map cycle. A transient
+        # templated popup can therefore follow a temporary owner withdraw and
+        # disappear immediately on Windows.
+        window = ctk.CTkToplevel(self)
+        self._update_available_window = window
         window.title("Update available")
         window.geometry("520x250")
+        window.minsize(520, 250)
         window.resizable(False, False)
-        window.transient(self)
         window.attributes("-topmost", True)
         window.grid_columnconfigure(0, weight=1)
+
+        def close_update_popup():
+            if getattr(self, "_update_available_window", None) is window:
+                self._update_available_window = None
+            try:
+                if window.winfo_exists():
+                    window.destroy()
+            except (tk.TclError, AttributeError):
+                pass
+
+        def show_update_popup():
+            try:
+                if not window.winfo_exists():
+                    return
+                window.deiconify()
+                window.lift()
+                window.attributes("-topmost", True)
+                window.focus_force()
+            except (tk.TclError, AttributeError):
+                pass
+
+        window.protocol("WM_DELETE_WINDOW", close_update_popup)
         ctk.CTkLabel(
-            window, text="A new version is available",
+            window,
+            text="A new version is available",
             font=ctk.CTkFont(size=20, weight="bold"),
         ).grid(row=0, column=0, padx=24, pady=(22, 14), sticky="w")
         ctk.CTkLabel(
@@ -70,21 +100,31 @@ class UIMixin(CustomContentTabMixin, HelpersTabMixin, SettingsTabMixin, Material
                 f"New version: {remote_version}\n"
                 f"Link: {self.UPDATE_PAGE_URL}"
             ),
-            justify="left", anchor="w",
+            justify="left",
+            anchor="w",
         ).grid(row=1, column=0, padx=24, pady=(0, 18), sticky="ew")
         buttons = ctk.CTkFrame(window, fg_color="transparent")
         buttons.grid(row=2, column=0, padx=24, pady=(0, 22), sticky="e")
         ctk.CTkButton(
-            buttons, text="Open download page", width=160,
+            buttons,
+            text="Open download page",
+            width=160,
             command=lambda: webbrowser.open(self.UPDATE_PAGE_URL),
         ).pack(side="left", padx=(0, 8))
         ctk.CTkButton(
-            buttons, text="Close", width=90, fg_color="#555555", hover_color="#666666",
-            command=window.destroy,
+            buttons,
+            text="Close",
+            width=90,
+            fg_color="#555555",
+            hover_color="#666666",
+            command=close_update_popup,
         ).pack(side="left")
-        PopupTemplate.schedule_activate(window, 50, focus=False)
-        PopupTemplate.schedule_activate(window, 60, focus=True)
-        window.after(300, lambda: window.attributes("-topmost", False) if window.winfo_exists() else None)
+
+        # CustomTkinter adjusts the native Windows title bar after creation and
+        # can briefly withdraw the toplevel. Re-show it after those callbacks.
+        window.after_idle(show_update_popup)
+        window.after(150, show_update_popup)
+        window.after(500, show_update_popup)
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)

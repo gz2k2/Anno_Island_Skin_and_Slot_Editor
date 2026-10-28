@@ -394,6 +394,15 @@ class PopupTemplate:
             cls.request_focus(window, delay_ms=0)
 
     @classmethod
+    def schedule_activate(cls, window, delay_ms=50, *, focus=True):
+        """Schedule a guarded foreground activation for an existing popup."""
+        return cls.schedule(
+            window,
+            delay_ms,
+            lambda: cls.safe_activate(window, focus=focus),
+        )
+
+    @classmethod
     def cancel_scheduled_callbacks(cls, window):
         for job_id in list(getattr(window, "_popup_after_jobs", ()) or ()):
             try:

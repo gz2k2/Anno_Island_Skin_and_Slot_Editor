@@ -1,0 +1,4 @@
+customtkinter
+lxml
+Pillow
+bc7enc-py

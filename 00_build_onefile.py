@@ -10,6 +10,7 @@ from pathlib import Path
 LAUNCHER_NAME = "Anno_Island_Editor.py"
 APP_NAME_BASE = "Anno_Island_Skin_and_Slot_Editor"
 VERSION_FILE = "version.txt"
+REQUIREMENTS_FILE = "requirements.txt"
 WINDOWED = True
 ONEFILE = True
 CLEAN_BUILD = True
@@ -104,6 +105,7 @@ APP_DIR = BASE_DIR / "app"
 BUILD_DIR = BASE_DIR / "build"
 DIST_DIR = BASE_DIR / "dist"
 SPEC_FILE = BASE_DIR / f"{APP_NAME}.spec"
+REQUIREMENTS_PATH = BASE_DIR / REQUIREMENTS_FILE
 
 
 # ============================================================
@@ -122,6 +124,31 @@ def module_path(module_name):
     return BASE_DIR.joinpath(*module_name.split(".")).with_suffix(".py")
 
 
+def install_requirements():
+    """Install all build/runtime dependencies from requirements.txt."""
+    if not REQUIREMENTS_PATH.is_file():
+        print(f"ERROR: Requirements file not found: {REQUIREMENTS_PATH}")
+        return False
+
+    print_header("Installing requirements")
+    command = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        str(REQUIREMENTS_PATH),
+    ]
+    print(" ".join(f'"{item}"' if " " in item else item for item in command))
+    try:
+        subprocess.run(command, cwd=BASE_DIR, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        print()
+        print(f"ERROR: Could not install requirements: {exc}")
+        return False
+    return True
+
+
 def check_project():
     """Validate the refactored package layout before deleting old outputs."""
     missing = []
@@ -130,6 +157,8 @@ def check_project():
         missing.append(str(LAUNCHER_PATH))
     if not APP_DIR.is_dir():
         missing.append(str(APP_DIR))
+    if not REQUIREMENTS_PATH.is_file():
+        missing.append(str(REQUIREMENTS_PATH))
 
     package_dirs = (
         APP_DIR,
@@ -306,6 +335,11 @@ def main():
     print("Application package:")
     print(APP_DIR)
 
+    if not REQUIREMENTS_PATH.is_file():
+        print(f"ERROR: Requirements file not found: {REQUIREMENTS_PATH}")
+        return 1
+    if not install_requirements():
+        return 1
     if not check_project():
         return 1
     if not check_pyinstaller():

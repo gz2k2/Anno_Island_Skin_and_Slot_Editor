@@ -17,14 +17,18 @@ import threading
 import shutil
 import struct
 import tempfile
-import time
 
 from PIL import Image
+
+try:
+    from bc7enc import pack_dds as _native_pack_dds
+except (ImportError, OSError):
+    _native_pack_dds = None
 
 REGIONS = ("Old World", "New World", "Enbesa", "Arctic")
 BACKUP_SUFFIX = ".tintmap_original"
 PATCH_STATE_FILENAME = "tintmap_patch_state.json"
-PATCH_ROUTINE_VERSION = 2
+PATCH_ROUTINE_VERSION = 3
 
 # Additional RGB offsets applied after the regional conversion.
 # Change these constants to tune the Brightness presets globally.
@@ -38,7 +42,6 @@ _BRIGHTNESS_OFFSETS = {
 }
 # Keep CPU-bound Python compression from monopolizing the GUI interpreter.
 TINTMAP_MAX_WORKERS = 4
-TINTMAP_YIELD_SECONDS = 0.001
 
 # Robust median/IQR profiles calculated from the supplied tintmap analysis.
 # Values are file-level RGB means. The mapper aligns source median/spread with
@@ -157,18 +160,49 @@ def _encode_dxt1_block(pixels):
     return struct.pack("<HHI", c0, c1, indices)
 
 
-def _encode_dxt1(rgb: Image.Image) -> bytes:
+def _expected_dxt1_payload_size(width: int, height: int) -> int:
+    return ((width + 3) // 4) * ((height + 3) // 4) * 8
+
+
+def _encode_dxt1_native(rgb: Image.Image) -> bytes:
+    if _native_pack_dds is None:
+        raise RuntimeError("Native BC1 encoder is unavailable")
+
+    rgba = rgb.convert("RGBA")
+    width, height = rgba.size
+    payload = bytes(_native_pack_dds(rgba.tobytes(), width, height, "DXT1"))
+    expected_size = _expected_dxt1_payload_size(width, height)
+    if len(payload) != expected_size:
+        raise ValueError(
+            f"Native DXT1 encoder returned {len(payload)} bytes; "
+            f"expected {expected_size} bytes for {width}x{height}."
+        )
+    return payload
+
+
+def _encode_dxt1_python(rgb: Image.Image) -> bytes:
+    rgb = rgb.convert("RGB")
     width, height = rgb.size
     if width % 4 or height % 4:
         raise ValueError(f"DXT1 dimensions must be divisible by four: {width}x{height}")
     pixels = rgb.load()
     output = bytearray()
     for by in range(0, height, 4):
-        time.sleep(TINTMAP_YIELD_SECONDS)
         for bx in range(0, width, 4):
             block = [pixels[bx+x, by+y] for y in range(4) for x in range(4)]
             output.extend(_encode_dxt1_block(block))
     return bytes(output)
+
+
+def _encode_dxt1(rgb: Image.Image) -> bytes:
+    if _native_pack_dds is not None:
+        try:
+            return _encode_dxt1_native(rgb)
+        except Exception:
+            # Keep patching operational if a native wheel or DLL is unavailable
+            # or incompatible on a specific machine.
+            pass
+    return _encode_dxt1_python(rgb)
 
 
 def _transform_image(image: Image.Image, source_region: str, target_region: str, brightness: str) -> Image.Image:

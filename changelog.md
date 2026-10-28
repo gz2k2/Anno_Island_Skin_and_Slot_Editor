@@ -1,6 +1,11 @@
 # Anno 1800 Island Skin and Slot Editor by gz2k2
 
-## [v0.107.24] - 2026-10-27
+## [v0.107.26]
+
+### Changed
+- Performance optimization and code fixes. Texture conversion speed has been improved.
+
+## [v0.107.24]
 
 ### Added
 - **Custom Objects Tab**: Custom Objects can now be defined and used under "Objects Configuration" (e.g., for custom sessions like *White and Cold* or *New Horizon*, which utilize custom objects). Support for creating Custom Categories and Custom Regions has been added. Custom Regions, Categories, and Objects feature a `(c)` tag in their text to clearly distinguish them from default entries.

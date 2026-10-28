@@ -20,7 +20,8 @@ EXTENSIONS = {
     # ".ini",
     # ".config",
     # ".md",
-
+    ".txt",
+    ".yml",
 }
 
 # Dateinamen, die direkt ausgeschlossen werden sollen
@@ -30,6 +31,8 @@ EXCLUDE_FILES = {
     "00_unpack_project.py",
     "z_errorlog.md",
     "00_errorlog.md",
+    "FUNDING.yml",
+    ".gitignore",
 }
 
 EXCLUDE = {
