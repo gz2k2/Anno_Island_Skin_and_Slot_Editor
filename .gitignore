@@ -18,7 +18,7 @@ errorlog.md
 z_errorlog.md
 00_errorlog.md
 *.csv
-*.zip
+
 
 # backup folder
 backups/

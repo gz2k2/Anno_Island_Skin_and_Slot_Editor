@@ -92,7 +92,9 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ steps.get_version.outputs.EXE_NAME }}
+          files: |
+            dist/${{ steps.get_version.outputs.EXE_NAME }}
+            tools/tools.zip
           name: v${{ steps.get_version.outputs.VERSION }}
           tag_name: v${{ steps.get_version.outputs.VERSION }}
           target_commitish: ${{ github.sha }}
