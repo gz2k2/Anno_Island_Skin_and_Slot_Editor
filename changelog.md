@@ -1,5 +1,12 @@
 # Anno 1800 Island Skin and Slot Editor by gz2k2
 
+## [v0.108.5]
+
+### Changed
+- **Export Map**: You can now choose a new map name directly during the export process.
+- **Texture Settings**: You can now enter custom offset values.
+
+
 ## [v0.107.26]
 
 ### Changed

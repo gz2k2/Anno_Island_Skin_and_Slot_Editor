@@ -3412,6 +3412,8 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             elif kind == "ask_yes_no":
                 title, text, response = value
                 response.put(messagebox.askyesno(title, text))
+            elif kind == "export_map_success":
+                self._last_export_map_destination = Path(str(value))
             elif kind == "done":
                 mode, ok, stopped = value
                 try:
@@ -3445,7 +3447,23 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                         )
                     else:
                         self.status_var.set("Done")
-                        messagebox.showinfo("Done", "Operation completed successfully.")
+                        export_destination = getattr(self, "_last_export_map_destination", None)
+                        if mode == "finalize" and export_destination is not None:
+                            self._last_export_map_destination = None
+                            if messagebox.askyesno(
+                                "Export Map",
+                                "Map exported successfully.\n\nOpen folder?\n\n"
+                                f"{export_destination}",
+                            ):
+                                try:
+                                    os.startfile(str(export_destination))
+                                except OSError as exc:
+                                    messagebox.showerror(
+                                        "Export Map",
+                                        f"The export folder could not be opened:\n{export_destination}\n\n{exc}",
+                                    )
+                        else:
+                            messagebox.showinfo("Done", "Operation completed successfully.")
                 else:
                     self.status_var.set("Error. Details siehe Log.")
                     messagebox.showerror("Error", "The operation failed. See the log for details.")

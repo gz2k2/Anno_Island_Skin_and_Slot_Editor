@@ -24,17 +24,46 @@
 - Export cleaned map data for use in a mod project
 - Export only the custom content actually used by the current island
 
-## Typical workflow
+## Detailed workflow
 
-1. Select or create the island/map project in **Start** / **Files and Folders**.
-2. Configure paths and application settings if required.
-3. Select the target region and material set.
-4. Patch tintmaps if the island is being visually converted to another region.
-5. Adjust objects in **Object Configuration** and **Object Map**.
-6. Adjust island slots in **Slot Configuration** and **Slot Map**.
-7. Review validation results and warnings.
-8. Save the desired map/object/slot changes.
-9. Use **Finalize** to export the map and any required custom content.
+The recommended workflow is **source → working copy → edit → validate/pack → export**. Keep source libraries, working maps, and release/export maps separate.
+
+### 1. Configure Settings > Map Folders
+Configure the paths you need before creating a working island. **Original Maps** and **Custom Map Folder** are sources, **Temporary Map Folder** is the working-copy destination, and **Map Export Folder** is the final filtered output root.
+
+### 2. Create a working island
+In **Start > Create Custom Island**, choose either **Create from Original Maps** or **Create from CustomFolder**. Original Maps uses the indexed original-map library; CustomFolder lets you choose an `.a7m` from your configured custom source library.
+
+Enter **New folder / Map Name**. The default is `<selected a7m stem>_skinned`. The application copies the selected map variant into `<Temporary Map Folder>/<New Map Name>`, renames map-owned files and matching map-name directory components, preserves shared containers such as `_gamedata`, and selects the newly created `.a7m` as the active working island.
+
+If you already have a working copy, you can select its `.a7m` directly instead of creating another copy.
+
+### 3. Check Files and Folders
+Verify that the selected `.a7m` and its companion files belong to the intended working map. Keep the complete directory structure together because later workflows use related map files and subfolders.
+
+### 4. Configure regional conversion and textures
+Use **Regional Settings** for target-region/material settings. If required, use **Texture Settings / Tintmaps** to convert supported DDS tintmaps and optionally apply Normal, Brighter, or Darker brightness handling. The native `bc7enc-py` path accelerates DXT1/BC1 encoding when available.
+
+### 5. Edit objects
+Use **Object Configuration** for filtering, replacement, density changes and custom-object workflows. Use **Object Map** for spatial selection, adding/removing/moving objects and area-based editing. Supported preview workflows keep edits in RAM until **Save** is used.
+
+### 6. Edit slots
+Use **Slot Configuration / Slot Map** for river, mine and supported resource/deposit slots. MapName and Gamedata changes are handled together where required. Review validation information and use **Save** to commit the working state.
+
+### 7. Validate and pack
+Review XML, ObjectId, GUID, MapName/Gamedata and slot warnings before finalization. If your edits need to be represented in packed island data, run **Pack Island Data** before exporting. **Export Map copies the existing packed map files and does not replace the packing step.**
+
+### 8. Finalize > Export Map
+1. Click **Export Map**.
+2. Confirm/edit **New Folder / Map Name**. The current `.a7m` stem is pre-filled.
+3. The output becomes `<Map Export Folder>/<Map Name>`.
+4. Map-owned root files and matching map-name folders are renamed consistently to the export name.
+5. Editing artifacts such as XML working files, `.data`, original/backup artifacts and `_tintmap_variants` are filtered out. `.xml.lnk` files are kept.
+6. The export is staged before an existing confirmed destination is replaced.
+7. After success, **Open folder?** can open the finished folder in Windows Explorer.
+
+### 9. Export custom content when required
+**Export custom content files** is separate from Export Map. Use it when the island needs a custom material set or custom `.prp` objects. It exports the selected/used content rather than blindly copying the complete custom-object library.
 
 ## Application areas
 
@@ -43,6 +72,127 @@
 These workflows select the island data used by the editor and provide the paths required by later operations.
 
 The application supports folder-based map workflows and can work with original map sources as well as custom map directories. Keep the full source directory structure intact because multiple workflows rely on related files rather than a single isolated XML file.
+
+### Settings > Map Folders
+
+The four Map Folders have **different roles**. They should be understood as a pipeline, not as interchangeable paths.
+
+```text
+SOURCE LIBRARIES                 WORKING COPY                 FINAL OUTPUT
+Original Maps ---------\
+                         >---- Temporary Map Folder -----> Map Export Folder
+Custom Map Folder -----/          edit here                 clean export
+```
+
+A practical layout is:
+
+```text
+D:/AnnoModding/
+├── OriginalMaps/       <- Original Maps
+├── CustomSources/      <- Custom Map Folder
+├── WorkingMaps/        <- Temporary Map Folder
+└── ExportedMaps/       <- Map Export Folder
+```
+
+#### Original Maps
+**Purpose:** source library for extracted original Anno islands.
+
+**Used by:** **Start > Create Custom Island > Create from Original Maps**.
+
+The application recursively scans this root for `.a7m` files and available `mapimage.png` previews. The scan data is written to `original_maps_index.csv` beside the application and is used by the original-map selection popup. If a source contains several variants, you select the variant that should become the basis of your working island.
+
+Treat this folder as a **master source library**. The workflow copies the selected island out of this library. You normally should not use Original Maps as your active editing folder or as the export destination.
+
+Example:
+
+```text
+D:/AnnoModding/OriginalMaps/
+└── ... extracted map tree ...
+    ├── moderate_l_01.a7m
+    └── mapimage.png
+```
+
+#### Custom Map Folder
+**Purpose:** source library for your own prepared/extracted maps.
+
+**Used by:** **Start > Create Custom Island > Create from CustomFolder**.
+
+Use this when the source is not supposed to come from the indexed Original Maps tree. Typical examples are manually extracted islands, reusable base maps, maps from another modding workspace, or prepared source templates.
+
+The chosen `.a7m` is **not edited in place by the Create Custom Island workflow**. It is used as the source for a new copy under Temporary Map Folder.
+
+Do not confuse this with **Settings > Custom > Custom Objects Folder**. Custom Map Folder contains complete map sources; Custom Objects Folder contains custom `.prp` assets.
+
+#### Temporary Map Folder
+**Purpose:** destination for the editable working copies created by **Create Custom Island**.
+
+Despite the word “Temporary”, this is effectively the application's **Working Maps** root. A created project can remain here while you edit it.
+
+If you select `moderate_l_01.a7m` and enter `MyIsland` as **New folder / Map Name**, the workflow creates a structure such as:
+
+```text
+<Temporary Map Folder>/
+└── MyIsland/
+    ├── MyIsland.a7m
+    ├── MyIsland/
+    │   └── ... map-specific data ...
+    ├── _gamedata/
+    │   └── ... shared data ...
+    └── ...
+```
+
+The creation routine does more than rename the outer folder. Map-owned root files and directory components belonging to the selected variant are changed from the old map name to the new map name. Shared structural folders such as `_gamedata` keep their shared names. The newly created `.a7m` becomes the active file in Start/Files and Folders.
+
+This separation is intentional: **Original Maps / Custom Map Folder remain sources; Temporary Map Folder contains the copy you actually modify.**
+
+#### Map Export Folder
+**Purpose:** root directory for the cleaned output from **Finalize > Export Map**.
+
+This setting should point to a parent directory, not to a single map project. Export Map asks for the map name and creates:
+
+```text
+<Map Export Folder>/<Map Name>/
+```
+
+Example:
+
+```text
+Map Export Folder = D:/AnnoModding/ExportedMaps
+Map Name          = MyIsland_Final
+
+Result:
+D:/AnnoModding/ExportedMaps/MyIsland_Final/
+```
+
+The export name is also applied to matching map-owned root files and map-name directory components. Therefore an edited working map can be exported under a different final name while keeping its map-specific names consistent.
+
+Export Map is a **filtered release/output copy**, not another working-copy command. It excludes the configured development artifacts, stages the complete export first, and only then replaces an existing destination after confirmation. After success, **Open folder?** opens the specific exported map folder.
+
+Do not place Map Export Folder inside the map currently being edited. The exporter rejects source/destination paths that overlap or contain one another.
+
+#### Quick decision guide
+
+- Original extracted game map? → put/browse it under **Original Maps**.
+- Own reusable or prepared source map? → use **Custom Map Folder**.
+- Map you are actively changing? → create/use it under **Temporary Map Folder**.
+- Finished filtered map for your output/mod workflow? → create it under **Map Export Folder**.
+
+Example end-to-end path:
+
+```text
+Original Maps/.../moderate_l_01.a7m
+        |
+        | Create Custom Island, name: MyIsland
+        v
+Temporary Map Folder/MyIsland/MyIsland.a7m
+        |
+        | edit -> Save -> validate -> Pack Island Data
+        v
+Finalize > Export Map, name: MyIsland_Final
+        |
+        v
+Map Export Folder/MyIsland_Final/MyIsland_Final.a7m
+```
 
 ### Regional Settings
 

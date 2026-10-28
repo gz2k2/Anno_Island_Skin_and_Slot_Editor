@@ -26,6 +26,7 @@ class TextureSettingsTabMixin:
         self.tintmap_source_region_var = tk.StringVar(value="The Old World")
         self.tintmap_target_region_var = tk.StringVar(value="Enbesa")
         self.tintmap_brightness_var = tk.StringVar(value="Normal")
+        self.tintmap_custom_offset_var = tk.StringVar(value="0")
         tint_frame = ctk.CTkFrame(tab)
         tint_frame.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
         tint_frame.grid_columnconfigure((1, 3, 5), weight=1)
@@ -47,10 +48,21 @@ class TextureSettingsTabMixin:
         ctk.CTkLabel(tint_frame, text="Brightness:").grid(
             row=1, column=4, padx=(12, 5), pady=14, sticky="e"
         )
-        ctk.CTkOptionMenu(
-            tint_frame, variable=self.tintmap_brightness_var,
-            values=sorted(BRIGHTNESS_OPTIONS, key=str.casefold), dynamic_resizing=False,
-        ).grid(row=1, column=5, padx=(0, 12), pady=14, sticky="ew")
+        brightness_frame = ctk.CTkFrame(tint_frame, fg_color="transparent")
+        brightness_frame.grid(row=1, column=5, padx=(0, 12), pady=14, sticky="ew")
+        brightness_frame.grid_columnconfigure(0, weight=1)
+        self.tintmap_brightness_menu = ctk.CTkOptionMenu(
+            brightness_frame, variable=self.tintmap_brightness_var,
+            values=list(BRIGHTNESS_OPTIONS), dynamic_resizing=False,
+            command=self._on_tintmap_brightness_changed,
+        )
+        self.tintmap_brightness_menu.grid(row=0, column=0, sticky="ew")
+        self.tintmap_custom_offset_entry = ctk.CTkEntry(
+            brightness_frame,
+            textvariable=self.tintmap_custom_offset_var,
+            width=80,
+            placeholder_text="Offset",
+        )
         ctk.CTkButton(
             tint_frame, text="Patch Tintmaps", command=self._start_tintmap_patch,
         ).grid(row=1, column=6, padx=(0, 14), pady=14, sticky="ew")
@@ -73,6 +85,16 @@ class TextureSettingsTabMixin:
             wraplength=800,
         ).grid(row=3, column=0, columnspan=7, padx=14, pady=(0, 14), sticky="ew")
 
+    def _on_tintmap_brightness_changed(self, value=None):
+        custom = (value or self.tintmap_brightness_var.get()) == "Custom"
+        entry = getattr(self, "tintmap_custom_offset_entry", None)
+        if entry is None:
+            return
+        if custom:
+            entry.grid(row=0, column=1, padx=(8, 0), sticky="e")
+        else:
+            entry.grid_forget()
+
     def _update_texture_detected_region(self):
         """Display original-region metadata without changing the From selection."""
         variable = getattr(self, "tintmap_detected_region_var", None)
@@ -90,6 +112,16 @@ class TextureSettingsTabMixin:
         source_region = self.tintmap_source_region_var.get().removeprefix("The ")
         target_region = self.tintmap_target_region_var.get().removeprefix("The ")
         brightness = self.tintmap_brightness_var.get()
+        custom_offset = 0
+        if brightness == "Custom":
+            try:
+                custom_offset = int(self.tintmap_custom_offset_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Patch Tintmaps", "Custom offset must be a whole number between -255 and 255.")
+                return
+            if not -255 <= custom_offset <= 255:
+                messagebox.showerror("Patch Tintmaps", "Custom offset must be between -255 and 255.")
+                return
         self._tintmap_patch_running = True
         self._tintmap_patch_queue = Queue()
         StatusWindowTemplate.close(getattr(self, "_tintmap_patch_popup", None))
@@ -110,6 +142,7 @@ class TextureSettingsTabMixin:
             try:
                 result = patch_island_tintmaps(
                     a7m_path, source_region, target_region, brightness=brightness,
+                    custom_offset=custom_offset,
                     progress_callback=lambda *args: events.put(("progress", *args)),
                 )
                 events.put(("done", result))

@@ -34,11 +34,11 @@ PATCH_ROUTINE_VERSION = 3
 # Change these constants to tune the Brightness presets globally.
 BRIGHTER_RGB_OFFSET = (12, 12, 12)
 DARKER_RGB_OFFSET = (-12, -12, -12)
-BRIGHTNESS_OPTIONS = ("Normal", "Brighter", "Darker")
+BRIGHTNESS_OPTIONS = ("Normal", "Brighter (+12)", "Darker (-12)", "Custom")
 _BRIGHTNESS_OFFSETS = {
     "Normal": (0, 0, 0),
-    "Brighter": BRIGHTER_RGB_OFFSET,
-    "Darker": DARKER_RGB_OFFSET,
+    "Brighter (+12)": BRIGHTER_RGB_OFFSET,
+    "Darker (-12)": DARKER_RGB_OFFSET,
 }
 # Keep CPU-bound Python compression from monopolizing the GUI interpreter.
 TINTMAP_MAX_WORKERS = 4
@@ -205,7 +205,7 @@ def _encode_dxt1(rgb: Image.Image) -> bytes:
     return _encode_dxt1_python(rgb)
 
 
-def _transform_image(image: Image.Image, source_region: str, target_region: str, brightness: str) -> Image.Image:
+def _transform_image(image: Image.Image, source_region: str, target_region: str, brightness: str, custom_offset=0) -> Image.Image:
     source_median, source_iqr = _PROFILES[source_region]
     target_median, target_iqr = _PROFILES[target_region]
     strength = _STRENGTH.get(frozenset((source_region, target_region)), 0.65)
@@ -213,7 +213,7 @@ def _transform_image(image: Image.Image, source_region: str, target_region: str,
     # The transformation is channel-independent. Build exact 256-value lookup
     # tables instead of running a Python loop for every pixel.
     scales = [max(0.25, min(4.0, target_iqr[i] / source_iqr[i])) for i in range(3)]
-    brightness_offset = _BRIGHTNESS_OFFSETS[brightness]
+    brightness_offset = ((custom_offset,) * 3 if brightness == "Custom" else _BRIGHTNESS_OFFSETS[brightness])
     lut = []
     for i in range(3):
         for value in range(256):
@@ -223,7 +223,7 @@ def _transform_image(image: Image.Image, source_region: str, target_region: str,
     return rgb.point(lut)
 
 
-def _patch_one(path: Path, source_region: str, target_region: str, brightness: str) -> str:
+def _patch_one(path: Path, source_region: str, target_region: str, brightness: str, custom_offset=0) -> str:
     backup = path.with_name(path.name + BACKUP_SUFFIX)
     if source_region == target_region and brightness == "Normal":
         if backup.is_file():
@@ -240,7 +240,7 @@ def _patch_one(path: Path, source_region: str, target_region: str, brightness: s
         raw = stream.read()
     header_size = 148 if raw[84:88] == b"DX10" else 128
     with Image.open(source) as decoded:
-        transformed = _transform_image(decoded, source_region, target_region, brightness)
+        transformed = _transform_image(decoded, source_region, target_region, brightness, custom_offset)
     payload = _encode_dxt1(transformed)
     expected = transformed.width * transformed.height // 2
     if len(payload) != expected:
@@ -312,7 +312,7 @@ class _PatchState:
                 if os.path.exists(temporary):
                     os.unlink(temporary)
 
-    def patch(self, path, source_region, target_region, brightness):
+    def patch(self, path, source_region, target_region, brightness, custom_offset=0):
         key = path.relative_to(self.folder).as_posix()
         with self.lock:
             entry = self.entries.get(key)
@@ -342,7 +342,7 @@ class _PatchState:
         region_codes = {"Old World": "ow", "New World": "nw",
                         "Enbesa": "enbesa", "Arctic": "arctic"}
         variant_name = (f"{region_codes[source_region]}_to_{region_codes[target_region]}"
-                        f"__{brightness.lower()}")
+                        f"__{brightness.lower()}_{custom_offset}" if brightness == "Custom" else f"__{brightness.lower()}")
         # Outside tintmaps: the normal DDS scan cannot discover cached variants.
         cache_root = self.folder.parent / "_tintmap_variants" / variant_name
         cached = cache_root / key
@@ -367,7 +367,7 @@ class _PatchState:
             with tempfile.TemporaryDirectory(prefix="tintmap_variant_", dir=cached.parent) as tmp:
                 staged = Path(tmp) / path.name
                 shutil.copy2(backup, staged)
-                result = _patch_one(staged, source_region, target_region, brightness)
+                result = _patch_one(staged, source_region, target_region, brightness, custom_offset)
                 if result != "changed":
                     return result
                 _atomic_copy(staged, cached)
@@ -413,12 +413,18 @@ def _atomic_json(destination, data):
             os.unlink(temporary)
 
 def patch_island_tintmaps(
-        a7m_path, source_region, target_region, brightness="Normal",
+        a7m_path, source_region, target_region, brightness="Normal", custom_offset=0,
         workers=None, progress_callback=None):
     if source_region not in REGIONS or target_region not in REGIONS:
         raise ValueError("Unknown source or target region.")
     if brightness not in BRIGHTNESS_OPTIONS:
         raise ValueError("Unknown brightness option.")
+    try:
+        custom_offset = int(custom_offset)
+    except (TypeError, ValueError):
+        raise ValueError("Custom brightness offset must be a whole number.") from None
+    if not -255 <= custom_offset <= 255:
+        raise ValueError("Custom brightness offset must be between -255 and 255.")
     folder = find_tintmaps_folder(a7m_path, status_callback=progress_callback)
     if progress_callback is not None:
         progress_callback("scan_start", "Scanning tintmaps folder for DDS files", str(folder))
@@ -440,7 +446,7 @@ def patch_island_tintmaps(
     counts = {"changed": 0, "restored": 0, "skipped": 0, "failed": 0}
     errors = []
     with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="Tintmap") as executor:
-        futures = {executor.submit(patch_state.patch, p, source_region, target_region, brightness): p for p in files}
+        futures = {executor.submit(patch_state.patch, p, source_region, target_region, brightness, custom_offset): p for p in files}
         completed = 0
         for future in as_completed(futures):
             path = futures[future]

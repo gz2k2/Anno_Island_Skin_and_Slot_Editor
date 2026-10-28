@@ -12,6 +12,7 @@ from app.functions.function_custom_content import load_custom_objects
 
 import customtkinter as ctk
 from app.templates.template_statuswindow import StatusWindowTemplate
+from app.templates.template_popup import PopupTemplate
 
 
 class FinalizeTabMixin:
@@ -515,6 +516,69 @@ class FinalizeTabMixin:
             f'Files exported: {len(exported)}\n\n{details}',
         )
 
+    def _ask_export_map_name(self, default_name):
+        import tkinter as tk
+
+        popup = PopupTemplate.create_window(
+            self,
+            title="Export Map",
+            heading="New Folder / Map Name",
+            geometry="520x220",
+            min_size=(520, 220),
+            resizable=False,
+            modal=True,
+            maximize=False,
+        )
+        dialog = popup["window"]
+        dialog.grid_columnconfigure(0, weight=1)
+
+        name_var = tk.StringVar(value=default_name)
+        name_entry = ctk.CTkEntry(dialog, textvariable=name_var)
+        name_entry.grid(row=1, column=0, padx=20, pady=(18, 15), sticky="ew")
+
+        def focus_name_entry():
+            if not PopupTemplate.window_exists(dialog) or not PopupTemplate.window_exists(name_entry):
+                return
+            try:
+                name_entry.select_range(0, "end")
+            except (tk.TclError, AttributeError):
+                pass
+
+        PopupTemplate.request_focus(dialog, widget=name_entry, delay_ms=50)
+        PopupTemplate.schedule(dialog, 55, focus_name_entry)
+        result = {"name": None}
+
+        def accept_name():
+            map_name = name_var.get().strip()
+            if not map_name:
+                messagebox.showerror(
+                    "Export Map", "Please enter a new folder / map name.", parent=dialog
+                )
+                return
+            if any(char in map_name for char in '<>:"/\\|?*'):
+                messagebox.showerror(
+                    "Export Map",
+                    "The map name contains characters that are not valid in a Windows folder name.",
+                    parent=dialog,
+                )
+                return
+            if map_name.endswith((" ", ".")):
+                messagebox.showerror(
+                    "Export Map",
+                    "The map name must not end with a space or period.",
+                    parent=dialog,
+                )
+                return
+            result["name"] = map_name
+            PopupTemplate.close_window(dialog)
+
+        ctk.CTkButton(dialog, text="OK", width=110, command=accept_name).grid(
+            row=2, column=0, padx=20, pady=(0, 18), sticky="e"
+        )
+        name_entry.bind("<Return>", lambda _event: accept_name())
+        self.wait_window(dialog)
+        return result["name"]
+
     def _start_export_map(self):
         if self._busy():
             return
@@ -523,13 +587,16 @@ class FinalizeTabMixin:
         if a7m is None or not a7m.is_file() or a7m.suffix.casefold() != '.a7m':
             messagebox.showerror('Export Map', 'Select an existing A7M file in Files and Folders first.')
             return
+        map_name = self._ask_export_map_name(a7m.stem)
+        if not map_name:
+            return
         folder = self.map_export_folder_var.get().strip()
         if not folder:
             self.tabs.set('Settings')
             messagebox.showerror('Export Map', 'Please configure Map export folder in Settings first.')
             return
         try:
-            source, destination = validate_export_paths(a7m.parent, Path(folder).expanduser() / a7m.stem)
+            source, destination = validate_export_paths(a7m.parent, Path(folder).expanduser() / map_name)
             if destination.exists() and not destination.is_dir():
                 raise ValueError(f'The export destination is not a folder: {destination}')
         except (OSError, ValueError) as exc:
@@ -544,6 +611,7 @@ class FinalizeTabMixin:
             return
         if not self._save_config():
             return
+        self._last_export_map_destination = None
         self._show_finalize_status("Exporting Map....")
         self.stop_event.clear()
         self.finalize_progress.set(0)
@@ -552,12 +620,13 @@ class FinalizeTabMixin:
         self.status_var.set('Preparing map export...')
         self.worker = threading.Thread(
             target=self._export_map_worker,
-            args=(source, destination, overwrite), daemon=True, name='MapExport',
+            args=(source, destination, overwrite, a7m.stem, map_name),
+            daemon=True, name='MapExport',
         )
         self.worker.start()
         self.after(100, self._watch_finalize_status)
 
-    def _export_map_worker(self, source, destination, overwrite):
+    def _export_map_worker(self, source, destination, overwrite, source_map_name, target_map_name):
         ok = False
         try:
             self._event('log_finalize',
@@ -569,12 +638,17 @@ class FinalizeTabMixin:
                 self._event('progress_finalize', fraction)
                 self._event('status', f'Export Map: {count}/{files} files | {relative}')
             count, size, warnings = export_map(
-                source, destination, self.stop_event, progress, overwrite=overwrite)
+                source, destination, self.stop_event, progress,
+                overwrite=overwrite,
+                source_map_name=source_map_name,
+                target_map_name=target_map_name,
+            )
             for warning in warnings:
                 self._event('log_finalize', 'WARNING: ' + warning + '\n')
             self._event('progress_finalize', 1.0)
             self._event('log_finalize_colored', (
                 f'\nMap exported successfully: {count} files, {size:,} bytes.\nTarget: {destination}\n', '#26DE81'))
+            self._event('export_map_success', str(destination))
             ok = True
         except MapExportCancelled as exc:
             self._event('log_finalize', f'\nCancelled: {exc}\n')
