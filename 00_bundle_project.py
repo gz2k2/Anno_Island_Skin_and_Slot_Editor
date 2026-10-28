@@ -15,7 +15,7 @@ OUTPUT = PACKED_DIR / f"Anno_Island_Reskinner_PROJECT_{timestamp}.txt"
 
 EXTENSIONS = {
     ".py",
-    # ".xml",
+    ".xml",
     # ".json",
     # ".ini",
     # ".config",
@@ -26,7 +26,6 @@ EXTENSIONS = {
 
 # Dateinamen, die direkt ausgeschlossen werden sollen
 EXCLUDE_FILES = {
-    "00_build_onefile.py",
     "00_bundle_project.py",
     "00_unpack_project.py",
     "z_errorlog.md",

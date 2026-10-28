@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import os
 import re
-import sys
 import tempfile
 import tkinter as tk
 import app.backend.xml_backend as ET
@@ -84,18 +83,25 @@ class MaterialSetsTabMixin:
         ).grid(row=1, column=2, padx=5, pady=(2, 5), sticky="ew")
 
     def _ms_refresh_catalog(self):
-        app_dir = Path(self.CONFIG_FILE).parent
-        bundle_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
         catalog = {}
-        # Later entries override bundled files; .materialset wins over .xml.
-        for folder in (bundle_dir / "material_sets", app_dir / "custom_material_sets"):
-            if folder.is_dir():
-                for suffix in (".xml", ".materialset"):
-                    for path in sorted(folder.iterdir(), key=lambda p: p.name.casefold()):
-                        if path.is_file() and path.suffix.casefold() == suffix:
-                            catalog[path.stem] = path
+        # Reuse the application's central material-set sources. Built-in files
+        # come from data/material_sets; the configured custom folder is appended
+        # afterwards and therefore overrides bundled files with the same stem.
+        search_dirs = getattr(self, "_material_set_search_dirs", lambda: ())()
+        for folder in search_dirs:
+            folder = Path(folder)
+            if not folder.is_dir():
+                continue
+            # Within one source, .materialset takes precedence over .xml.
+            for suffix in (".xml", ".materialset"):
+                for path in sorted(folder.iterdir(), key=lambda p: p.name.casefold()):
+                    if path.is_file() and path.suffix.casefold() == suffix:
+                        catalog[path.stem] = path
         self.ms_catalog = catalog
-        self.ms_menu.configure(values=sorted(catalog, key=str.casefold) or ["No material sets found"])
+        values = sorted(catalog, key=str.casefold) or ["No material sets found"]
+        self.ms_menu.configure(values=values)
+        if self.ms_selection_var.get() not in catalog:
+            self.ms_selection_var.set("Select material set..." if catalog else values[0])
 
     def _ms_discard_ok(self):
         changed = any(row["edit_var"].get() != row["original"] for row in self.ms_rows)

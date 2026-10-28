@@ -10,20 +10,41 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+import threading
 import os
 import hashlib
 import json
-import threading
 import shutil
 import struct
 import tempfile
 
 from PIL import Image
 
+_NATIVE_ENCODER_IMPORT_ERROR = None
 try:
     from bc7enc import pack_dds as _native_pack_dds
-except (ImportError, OSError):
+except (ImportError, OSError) as exc:
     _native_pack_dds = None
+    _NATIVE_ENCODER_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
+
+_NATIVE_ENCODER_RUNTIME_ERROR = None
+_NATIVE_ENCODER_ERROR_LOCK = threading.Lock()
+
+
+def tintmap_encoder_status():
+    """Return the active DDS encoder and any native-loader/runtime failure."""
+    if _native_pack_dds is not None and _NATIVE_ENCODER_RUNTIME_ERROR is None:
+        return {
+            "native": True,
+            "name": "bc7enc native DXT1",
+            "detail": "Native accelerated DDS compression is available.",
+        }
+    error = _NATIVE_ENCODER_RUNTIME_ERROR or _NATIVE_ENCODER_IMPORT_ERROR
+    return {
+        "native": False,
+        "name": "Python DXT1 fallback (slow)",
+        "detail": error or "The native bc7enc encoder is unavailable.",
+    }
 
 REGIONS = ("Old World", "New World", "Enbesa", "Arctic")
 BACKUP_SUFFIX = ".tintmap_original"
@@ -41,7 +62,7 @@ _BRIGHTNESS_OFFSETS = {
     "Darker (-12)": DARKER_RGB_OFFSET,
 }
 # Keep CPU-bound Python compression from monopolizing the GUI interpreter.
-TINTMAP_MAX_WORKERS = 4
+TINTMAP_MAX_WORKERS = 8
 
 # Robust median/IQR profiles calculated from the supplied tintmap analysis.
 # Values are file-level RGB means. The mapper aligns source median/spread with
@@ -195,13 +216,16 @@ def _encode_dxt1_python(rgb: Image.Image) -> bytes:
 
 
 def _encode_dxt1(rgb: Image.Image) -> bytes:
-    if _native_pack_dds is not None:
+    global _NATIVE_ENCODER_RUNTIME_ERROR
+    if _native_pack_dds is not None and _NATIVE_ENCODER_RUNTIME_ERROR is None:
         try:
             return _encode_dxt1_native(rgb)
-        except Exception:
-            # Keep patching operational if a native wheel or DLL is unavailable
-            # or incompatible on a specific machine.
-            pass
+        except Exception as exc:
+            # Fall back for compatibility, but preserve the real reason so the
+            # UI can clearly report that subsequent files use the slow encoder.
+            with _NATIVE_ENCODER_ERROR_LOCK:
+                if _NATIVE_ENCODER_RUNTIME_ERROR is None:
+                    _NATIVE_ENCODER_RUNTIME_ERROR = f"{type(exc).__name__}: {exc}"
     return _encode_dxt1_python(rgb)
 
 
@@ -425,6 +449,9 @@ def patch_island_tintmaps(
         raise ValueError("Custom brightness offset must be a whole number.") from None
     if not -255 <= custom_offset <= 255:
         raise ValueError("Custom brightness offset must be between -255 and 255.")
+    encoder = tintmap_encoder_status()
+    if progress_callback is not None:
+        progress_callback("encoder", encoder["name"], encoder["detail"], encoder["native"])
     folder = find_tintmaps_folder(a7m_path, status_callback=progress_callback)
     if progress_callback is not None:
         progress_callback("scan_start", "Scanning tintmaps folder for DDS files", str(folder))

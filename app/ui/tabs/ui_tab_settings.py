@@ -65,51 +65,17 @@ class SettingsTabMixin:
 
         ctk.CTkLabel(
             general_box,
-            text="File formats",
-            font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=5, column=0, columnspan=3, padx=15, pady=(18, 5), sticky="w")
-        self._path_row(
-            general_box,
-            6,
-            "Island_Gamedata XML:",
-            self.gamedata_format_var,
-            lambda: self._select_xml(self.gamedata_format_var, "Select gamedata file format"),
-        )
-        self._path_row(
-            general_box,
-            7,
-            "Island_RD3D XML:",
-            self.rd3d_format_var,
-            lambda: self._select_xml(self.rd3d_format_var, "Select RD3D file format"),
-        )
-        self._path_row(
-            general_box,
-            8,
-            "a7minfo.xml:",
-            self.a7minfo_format_var,
-            lambda: self._select_xml(self.a7minfo_format_var, "Select A7MINFO file format"),
-        )
-        self._path_row(
-            general_box,
-            9,
-            "tmc.xml:",
-            self.tmc_format_var,
-            lambda: self._select_xml(self.tmc_format_var, "Select TMC file format"),
-        )
-
-        ctk.CTkLabel(
-            general_box,
             text="TMC parallel processes",
             font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=10, column=0, columnspan=3, padx=15, pady=(18, 5), sticky="w")
+        ).grid(row=5, column=0, columnspan=3, padx=15, pady=(18, 5), sticky="w")
         ctk.CTkLabel(general_box, text="Parallel processes:").grid(
-            row=11, column=0, padx=(15, 8), pady=6, sticky="w"
+            row=6, column=0, padx=(15, 8), pady=6, sticky="w"
         )
         ctk.CTkEntry(general_box, textvariable=self.tmc_parallel_var, width=90).grid(
-            row=11, column=1, padx=8, pady=6, sticky="w"
+            row=6, column=1, padx=8, pady=6, sticky="w"
         )
         ctk.CTkLabel(general_box, text="Default: 4", text_color="gray70").grid(
-            row=11, column=2, padx=(8, 15), pady=6, sticky="w"
+            row=6, column=2, padx=(8, 15), pady=6, sticky="w"
         )
 
         map_folders_box = ctk.CTkScrollableFrame(map_folders_tab, orientation="vertical")

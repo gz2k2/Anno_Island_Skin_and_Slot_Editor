@@ -8,7 +8,9 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from app.functions.functions_tintmaps import BRIGHTNESS_OPTIONS, REGIONS, patch_island_tintmaps
+from app.functions.functions_tintmaps import (
+    BRIGHTNESS_OPTIONS, REGIONS, patch_island_tintmaps, tintmap_encoder_status,
+)
 from app.templates.template_statuswindow import StatusWindowTemplate
 
 
@@ -122,12 +124,21 @@ class TextureSettingsTabMixin:
             if not -255 <= custom_offset <= 255:
                 messagebox.showerror("Patch Tintmaps", "Custom offset must be between -255 and 255.")
                 return
+        encoder = tintmap_encoder_status()
+        if not encoder["native"]:
+            messagebox.showwarning(
+                "Patch Tintmaps",
+                "The native bc7enc DDS encoder is unavailable.\n\n"
+                "The slow Python DXT1 fallback will be used. Conversion can take much longer.\n\n"
+                f"Reason: {encoder['detail']}",
+            )
+        self._tintmap_patch_encoder = encoder
         self._tintmap_patch_running = True
         self._tintmap_patch_queue = Queue()
         StatusWindowTemplate.close(getattr(self, "_tintmap_patch_popup", None))
         self._tintmap_patch_popup = StatusWindowTemplate.create(
             self,
-            text="Preparing tintmap patch...",
+            text=f"Preparing tintmap patch...\nEncoder: {encoder['name']}",
             title="Patch Tintmaps",
             heading="Patching Tintmaps",
             progress=True,
@@ -173,7 +184,12 @@ class TextureSettingsTabMixin:
             if message[0] == "progress":
                 stage = message[1]
                 payload = message[2:]
-                if stage == "folder":
+                if stage == "encoder":
+                    name, detail, native = payload
+                    self._tintmap_patch_encoder = {"name": name, "detail": detail, "native": native}
+                    text = f"Encoder: {name}\n{detail}"
+                    fraction = 0.01
+                elif stage == "folder":
                     label, detail = payload
                     text = f"Folder search: {label}\n{detail}"
                     fraction = 0.02
@@ -217,6 +233,8 @@ class TextureSettingsTabMixin:
 
         if latest_progress is not None:
             text, fraction = latest_progress
+            encoder = getattr(self, "_tintmap_patch_encoder", tintmap_encoder_status())
+            text = f"Encoder: {encoder['name']}\n\n{text}"
             StatusWindowTemplate.update(
                 self._tintmap_patch_popup, text=text, fraction=fraction,
             )
@@ -237,7 +255,9 @@ class TextureSettingsTabMixin:
         details = "\n".join(result.errors[:10])
         if len(result.errors) > 10:
             details += f"\n... and {len(result.errors) - 10} more error(s)"
+        encoder = getattr(self, "_tintmap_patch_encoder", tintmap_encoder_status())
         summary = (
+            f"Encoder: {encoder['name']}\n"
             f"Folder: {result.tintmaps_folder}\n"
             f"Variant cache: {result.tintmaps_folder.parent / '_tintmap_variants'}\n"
             f"DDS found: {result.found}\nApplied: {result.changed}\n"

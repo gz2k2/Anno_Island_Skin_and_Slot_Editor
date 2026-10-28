@@ -22,7 +22,8 @@ ICON_FILE = None
 
 # Bundled read-only resources.
 DATA_DIRS = (
-    "material_sets",
+    "data/material_sets",
+    "data/xml",
 )
 DATA_FILES = (
     VERSION_FILE,
@@ -49,6 +50,7 @@ HIDDEN_IMPORTS = (
     "app.functions.function_slot_validation",
     "app.functions.function_xml_repair",
     "app.functions.functions_tintmaps",
+    "bc7enc",
     "app.templates.template_category_picker",
     "app.templates.template_map_view",
     "app.templates.template_popup",
@@ -175,7 +177,14 @@ def check_project():
         if not init_file.is_file():
             missing.append(str(init_file))
 
-    module_files = [module_path(name) for name in HIDDEN_IMPORTS]
+    # Only validate local project modules as source files. Third-party hidden
+    # imports such as bc7enc live in site-packages and are checked separately
+    # through an actual import below.
+    local_module_names = (
+        name for name in HIDDEN_IMPORTS
+        if name == "app" or name.startswith("app.")
+    )
+    module_files = [module_path(name) for name in local_module_names]
     missing.extend(str(path) for path in module_files if not path.is_file())
 
     for directory in DATA_DIRS:
@@ -201,12 +210,12 @@ def check_project():
         print(f"ERROR: Project validation failed: {exc}")
         return False
 
-    for package in ("customtkinter", "PIL"):
+    for package in ("customtkinter", "PIL", "bc7enc"):
         try:
             __import__(package)
         except ImportError:
             print(f"ERROR: Missing dependency: {package}.")
-            print("Install customtkinter and pillow before building.")
+            print("Install all packages from requirements.txt before building.")
             return False
 
     return True
@@ -263,6 +272,8 @@ def build():
         "customtkinter",
         "--collect-all",
         "PIL",
+        "--collect-all",
+        "bc7enc",
     ]
 
     for directory in DATA_DIRS:

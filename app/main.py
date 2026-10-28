@@ -99,6 +99,14 @@ def get_bundle_dir() -> Path:
 
 BUNDLE_DIR = get_bundle_dir()
 
+BUNDLED_XML_DIR = BUNDLE_DIR / "data" / "xml"
+BUNDLED_XML_FORMATS = {
+    "gamedata": BUNDLED_XML_DIR / "Island_Gamedata_v3.xml",
+    "rd3d": BUNDLED_XML_DIR / "Island_RD3D.xml",
+    "a7minfo": BUNDLED_XML_DIR / "a7minfo.xml",
+    "tmc": BUNDLED_XML_DIR / "tmc.xml",
+}
+
 VERSION_FILE = BUNDLE_DIR / "version.txt"
 REMOTE_VERSION_URL = "https://raw.githubusercontent.com/gz2k2/Anno_Island_Skin_and_Slot_Editor/refs/heads/main/version.txt"
 UPDATE_PAGE_URL = "https://github.com/gz2k2/Anno_Island_Skin_and_Slot_Editor"
@@ -151,10 +159,10 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
         self.rda_var = tk.StringVar()
         self.fdb_var = tk.StringVar()
-        self.gamedata_format_var = tk.StringVar()
-        self.rd3d_format_var = tk.StringVar()
-        self.a7minfo_format_var = tk.StringVar()
-        self.tmc_format_var = tk.StringVar()
+        self.gamedata_format_var = tk.StringVar(value=str(BUNDLED_XML_FORMATS["gamedata"]))
+        self.rd3d_format_var = tk.StringVar(value=str(BUNDLED_XML_FORMATS["rd3d"]))
+        self.a7minfo_format_var = tk.StringVar(value=str(BUNDLED_XML_FORMATS["a7minfo"]))
+        self.tmc_format_var = tk.StringVar(value=str(BUNDLED_XML_FORMATS["tmc"]))
         self.tmc_parallel_var = tk.StringVar(value="4")
         self.gamefiles_var = tk.StringVar()
         self.island_export_custom_var = tk.StringVar()
@@ -765,7 +773,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
     def _material_set_search_dirs(self):
         """Bundled material sets plus the user-configured custom folder."""
-        folders = [BUNDLE_DIR / "material_sets"]
+        folders = [BUNDLE_DIR / "data" / "material_sets"]
         custom_folder = self._custom_material_sets_dir()
         if custom_folder is not None:
             folders.append(custom_folder)
@@ -790,7 +798,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         custom_folder = self._custom_material_sets_dir()
         if custom_folder is not None:
             folders.append(custom_folder)
-        folders.append(BUNDLE_DIR / "material_sets")
+        folders.append(BUNDLE_DIR / "data" / "material_sets")
         for folder in folders:
             for suffix in (".materialset", ".xml"):
                 candidate = folder / f"{filename}{suffix}"
@@ -2436,36 +2444,6 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
     def _select_fdb(self):
         self._select_exe(self.fdb_var, "FileDBReader.exe")
-        exe = Path(self.fdb_var.get()) if self.fdb_var.get() else None
-        if exe and exe.is_file():
-            self._autodetect_formats(exe.parent)
-            self._save_config()
-
-    def _select_xml(self, variable, title):
-        value = filedialog.askopenfilename(title=title, filetypes=[("XML", "*.xml"), ("All files", "*.*")])
-        if value:
-            variable.set(value)
-            self._save_config()
-
-    def _autodetect_formats(self, base: Path):
-        roots = [base / "FileFormats", base]
-        patterns = {
-            self.gamedata_format_var: ["Island_Gamedata_v3.xml", "Island_Gamedata_V2.xml", "Island_Gamedata*.xml"],
-            self.rd3d_format_var: ["Island_RD3D.xml", "*RD3D*.xml"],
-            self.a7minfo_format_var: ["a7minfo.xml", "*a7minfo*.xml"],
-            self.tmc_format_var: ["tmc.xml", "*tmc*.xml"],
-        }
-        for variable, names in patterns.items():
-            if variable.get() and Path(variable.get()).is_file():
-                continue
-            for root in roots:
-                for name in names:
-                    matches = list(root.glob(name)) if root.is_dir() else []
-                    if matches:
-                        variable.set(str(matches[0]))
-                        break
-                if variable.get():
-                    break
 
     def _start_unpack(self):
         if self._busy():
@@ -3324,10 +3302,10 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         values = [
             ("RdaConsole.exe", self.rda_var.get()),
             ("FileDBReader.exe", self.fdb_var.get()),
-            ("Island_Gamedata XML", self.gamedata_format_var.get()),
-            ("Island_RD3D XML", self.rd3d_format_var.get()),
-            ("a7minfo.xml", self.a7minfo_format_var.get()),
-            ("tmc.xml", self.tmc_format_var.get()),
+            ("Bundled Island_Gamedata XML", BUNDLED_XML_FORMATS["gamedata"]),
+            ("Bundled Island_RD3D XML", BUNDLED_XML_FORMATS["rd3d"]),
+            ("Bundled a7minfo.xml", BUNDLED_XML_FORMATS["a7minfo"]),
+            ("Bundled tmc.xml", BUNDLED_XML_FORMATS["tmc"]),
         ]
         return [f"{name}: not found ({value or 'no path'})" for name, value in values if not Path(value).is_file()]
 
@@ -3336,7 +3314,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         if errors:
             self._show_settings_errors(errors)
         else:
-            messagebox.showinfo("Settings", "All program and file format paths are valid.")
+            messagebox.showinfo("Settings", "All required programs and bundled XML formats are available.")
 
     def _show_settings_errors(self, errors):
         self.tabs.set("Settings")
@@ -3578,10 +3556,6 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             options = config["Options"] if config.has_section("Options") else {}
             self.rda_var.set(paths.get("rda_console", ""))
             self.fdb_var.set(paths.get("file_db_reader", ""))
-            self.gamedata_format_var.set(paths.get("gamedata_format", ""))
-            self.rd3d_format_var.set(paths.get("rd3d_format", ""))
-            self.a7minfo_format_var.set(paths.get("a7minfo_format", ""))
-            self.tmc_format_var.set(paths.get("tmc_format", ""))
             self.gamefiles_var.set(paths.get("gamefiles", ""))
             self.island_export_custom_var.set(paths.get("island_export_custom", ""))
             self.original_maps_var.set(paths.get("original_maps", ""))
@@ -3604,10 +3578,6 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         config["Paths"] = {
             "rda_console": self.rda_var.get().strip(),
             "file_db_reader": self.fdb_var.get().strip(),
-            "gamedata_format": self.gamedata_format_var.get().strip(),
-            "rd3d_format": self.rd3d_format_var.get().strip(),
-            "a7minfo_format": self.a7minfo_format_var.get().strip(),
-            "tmc_format": self.tmc_format_var.get().strip(),
             "gamefiles": self.gamefiles_var.get().strip(),
             "island_export_custom": self.island_export_custom_var.get().strip(),
             "original_maps": self.original_maps_var.get().strip(),

@@ -9,7 +9,7 @@ build/
 dist/
 *.spec
 
-# custom configs
+# custom configs and files
 *.ini
 *settings.json
 *.json
@@ -18,9 +18,11 @@ errorlog.md
 z_errorlog.md
 00_errorlog.md
 *.csv
+*.zip
 
 # backup folder
 backups/
 
 # random folders
 packed/
+libs/
