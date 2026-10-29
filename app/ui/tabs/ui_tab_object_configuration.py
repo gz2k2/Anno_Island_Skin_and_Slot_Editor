@@ -132,15 +132,15 @@ class TmcXmlRamCache:
                 )
                 working = self._parse(patched) if patched.is_file() else copy.deepcopy(baseline)
                 before, current = self._entries(baseline), self._entries(working)
-                if len(before) != len(current) or any(
-                    a[0] != b[0] for a, b in zip(before, current)
-                ):
-                    raise ValueError('Original/patched GroundObjects IDs or count differ')
+                # Patched TMC files may contain fewer GroundObjects after Density
+                # deletion. Objects Table 2 therefore indexes the current working
+                # entries instead of requiring a one-to-one original count.
                 self.documents[original] = {
                     'original': baseline, 'working': working, 'target': patched,
                 }
-                for ordinal, ((oid, old), (_, current_name)) in enumerate(zip(before, current)):
-                    key = (oid, old.text or '', current_name.text or '')
+                for ordinal, (oid, current_name) in enumerate(current):
+                    current_text = current_name.text or ''
+                    key = (oid, current_text, current_text)
                     grouped.setdefault(key, []).append((original, ordinal))
             except (OSError, ET.ParseError, ValueError, UnicodeError) as exc:
                 self.errors.append(f'{original}: {exc}')
@@ -347,6 +347,11 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             objects_2_buttons, text="Show Object Map (tmc)", width=180, height=38,
             font=ctk.CTkFont(weight="bold"),
             command=self._open_tmc_object_map,
+        ).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(
+            objects_2_buttons, text="Change Density (tmc)", width=180, height=38,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._open_tmc_density,
         ).pack(side="left")
 
         self._tmc_ram_initialize(tab)
@@ -2816,6 +2821,348 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             self._density_open_poll_job = self.after(150, poll)
 
         self._density_open_poll_job = self.after(0, poll)
+
+    @staticmethod
+    def _tmc_density_tag(node):
+        return node.tag.rsplit('}', 1)[-1].lower() if isinstance(node.tag, str) else ''
+
+    def _tmc_density_scan_tree(self, tree, source):
+        instances = []
+        for ground in tree.getroot().iter():
+            if self._tmc_density_tag(ground) != 'groundobjects':
+                continue
+            for entry in list(ground):
+                fields = {self._tmc_density_tag(child): child for child in list(entry)}
+                filename_node = fields.get('filename')
+                positions_node = fields.get('positionsxz')
+                if filename_node is None or positions_node is None:
+                    continue
+                filename = (filename_node.text or '').strip()
+                positions = (positions_node.text or '').split()
+                if not filename or len(positions) % 2:
+                    continue
+                rotations = (fields.get('rotationsy').text or '').split() if fields.get('rotationsy') is not None else []
+                coverages = (fields.get('coverages').text or '').split() if fields.get('coverages') is not None else []
+                count = len(positions) // 2
+                if rotations and len(rotations) != count:
+                    raise ValueError(f'{source.name}: RotationsY count does not match PositionsXZ.')
+                if coverages and len(coverages) != count:
+                    raise ValueError(f'{source.name}: Coverages count does not match PositionsXZ.')
+                category = get_category_for_object(filename, self.CONFIG_FILE)
+                for index in range(count):
+                    instances.append((category, ground, entry, fields, index, filename))
+        return instances
+
+    def _tmc_density_load_documents(self):
+        folder = Path(self.tmc_data_meshes_var.get().strip())
+        if not folder.is_dir():
+            raise FileNotFoundError('Please select an existing TMC meshes folder first.')
+        originals = sorted(folder.rglob('*_original.xml'), key=lambda path: str(path).casefold())
+        if not originals:
+            raise FileNotFoundError('No *_original.xml files were found in the selected meshes folder.')
+        docs = {}
+        errors = []
+        for original in originals:
+            patched = original.with_name(original.name[:-len('_original.xml')] + '_patched.xml')
+            source = patched if patched.is_file() else original
+            try:
+                working = TmcXmlRamCache._parse(source)
+                baseline = TmcXmlRamCache._parse(original)
+                self._tmc_density_scan_tree(working, source)
+                docs[original] = {'original': original, 'patched': patched, 'tree': working, 'baseline': baseline, 'dirty': False}
+            except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+                errors.append(f'{source.name}: {exc}')
+        if not docs:
+            raise ValueError('No valid TMC XML files could be loaded.\n' + '\n'.join(errors[:10]))
+        return folder, docs, errors
+
+    def _open_tmc_density(self):
+        window = getattr(self, '_tmc_density_window', None)
+        if window is not None and window.winfo_exists():
+            window.deiconify(); window.lift(); PopupTemplate.safe_activate(window)
+            return
+        status = self._show_object_operation_status('Loading TMC density data...')
+        try:
+            try:
+                folder, docs, errors = self._tmc_density_load_documents()
+            except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+                messagebox.showerror('Change Density (tmc)', str(exc))
+                return
+            self._tmc_density_folder = folder
+            self._tmc_density_docs = docs
+            self._tmc_density_errors = errors
+            self._tmc_density_dirty = False
+            self._tmc_density_percent = tk.StringVar(master=self, value='10')
+            self._tmc_density_info = tk.StringVar(master=self)
+            built = PopupTemplate.create_window(
+                self, title='Change Density (tmc)', heading='Change Density (tmc)',
+                close_command=self._close_tmc_density, maximize=True)
+            self._tmc_density_window = window = built['window']
+            window.grid_columnconfigure(0, weight=1)
+            window.grid_rowconfigure(3, weight=1)
+            bar = ctk.CTkFrame(window, fg_color='transparent')
+            bar.grid(row=1, column=0, padx=18, pady=(0, 8), sticky='ew')
+            ctk.CTkLabel(bar, text='Density reduction (%)').pack(side='left', padx=(0, 10))
+            ctk.CTkEntry(bar, textvariable=self._tmc_density_percent, width=90).pack(side='left')
+            ctk.CTkButton(bar, text='Reset', width=90,
+                          command=self._confirm_tmc_density_reset).pack(side='right', padx=(8, 0))
+            ctk.CTkButton(bar, text='Save', width=90,
+                          command=self._save_tmc_density).pack(side='right')
+            ctk.CTkLabel(window, textvariable=self._tmc_density_info, anchor='w').grid(
+                row=2, column=0, padx=18, pady=(0, 8), sticky='ew')
+            self._tmc_density_rows = ctk.CTkScrollableFrame(window)
+            self._tmc_density_rows.grid(row=3, column=0, padx=18, pady=(0, 16), sticky='nsew')
+            self._tmc_density_rows.grid_columnconfigure(0, weight=1)
+            self._refresh_tmc_density()
+        finally:
+            self._hide_object_operation_status(status)
+
+    def _tmc_density_category_instances(self):
+        groups = {}
+        for doc in self._tmc_density_docs.values():
+            for item in self._tmc_density_scan_tree(doc['tree'], doc['patched']):
+                groups.setdefault(item[0], []).append((doc, *item[1:]))
+        return groups
+
+    def _refresh_tmc_density(self):
+        groups = self._tmc_density_category_instances()
+        self._tmc_density_groups = groups
+        frame = self._tmc_density_rows
+        for widget in frame.winfo_children():
+            widget.destroy()
+        total = sum(len(items) for items in groups.values())
+        suffix = ' | Unsaved changes' if self._tmc_density_dirty else ''
+        error_text = f' | {len(self._tmc_density_errors)} file errors' if self._tmc_density_errors else ''
+        self._tmc_density_info.set(
+            f'{total} TMC GroundObject instances in {len(groups)} categories{error_text}{suffix}')
+        for row, category in enumerate(sorted(groups, key=str.casefold)):
+            ctk.CTkLabel(frame, text=category, anchor='w').grid(
+                row=row, column=0, padx=(8, 12), pady=4, sticky='ew')
+            ctk.CTkLabel(frame, text=str(len(groups[category])), width=80).grid(
+                row=row, column=1, padx=4, pady=4)
+            ctk.CTkButton(frame, text='- xx%', width=82,
+                          command=lambda c=category: self._reduce_tmc_density(c)).grid(
+                row=row, column=2, padx=4, pady=4)
+            ctk.CTkButton(frame, text='Delete', width=82,
+                          fg_color='#B3261E', hover_color='#8C1D18',
+                          command=lambda c=category: self._delete_tmc_density(c)).grid(
+                row=row, column=3, padx=(4, 8), pady=4)
+
+    def _tmc_density_remove_refs(self, references):
+        # Group by XML entry and remove descending indices from all parallel arrays.
+        grouped = {}
+        for doc, ground, entry, fields, index, filename in references:
+            grouped.setdefault((id(doc), id(entry)), [doc, ground, entry, fields, []])[4].append(index)
+        removed = 0
+        for doc, ground, entry, fields, indices in grouped.values():
+            positions = (fields['positionsxz'].text or '').split()
+            rotations = (fields.get('rotationsy').text or '').split() if fields.get('rotationsy') is not None else []
+            coverages = (fields.get('coverages').text or '').split() if fields.get('coverages') is not None else []
+            for index in sorted(set(indices), reverse=True):
+                if index * 2 + 1 >= len(positions):
+                    continue
+                del positions[index * 2:index * 2 + 2]
+                if index < len(rotations): del rotations[index]
+                if index < len(coverages): del coverages[index]
+                removed += 1
+                doc['dirty'] = True
+            if positions:
+                fields['positionsxz'].text = ' '.join(positions)
+                if fields.get('rotationsy') is not None: fields['rotationsy'].text = ' '.join(rotations)
+                if fields.get('coverages') is not None: fields['coverages'].text = ' '.join(coverages)
+            else:
+                ground.remove(entry)
+        return removed
+
+    def _reduce_tmc_density(self, category):
+        thread = getattr(self, '_tmc_density_save_thread', None)
+        if thread is not None and thread.is_alive():
+            return
+        try:
+            percent = float(self._tmc_density_percent.get().strip().replace(',', '.'))
+            if not 0 < percent <= 100:
+                raise ValueError('Density reduction must be greater than 0 and at most 100.')
+            refs = list(self._tmc_density_groups.get(category, ()))
+            count = min(len(refs), max(1, round(len(refs) * percent / 100.0))) if refs else 0
+            # Stable selection makes repeated preview/reset behavior reproducible.
+            rng = random.Random(f'{category}|{len(refs)}|{percent:g}')
+            selected = rng.sample(refs, count) if count else []
+            removed = self._tmc_density_remove_refs(selected)
+            self._tmc_density_dirty = self._tmc_density_dirty or bool(removed)
+            self._refresh_tmc_density()
+            self.status_var.set(f'TMC density reduced: {category}, -{removed} instances.')
+        except ValueError as exc:
+            messagebox.showerror('Change Density (tmc)', str(exc), parent=self._tmc_density_window)
+
+    def _delete_tmc_density(self, category):
+        thread = getattr(self, '_tmc_density_save_thread', None)
+        if thread is not None and thread.is_alive():
+            return
+        refs = list(self._tmc_density_groups.get(category, ()))
+        if not refs:
+            return
+        if not messagebox.askyesno(
+            'Delete TMC objects',
+            f'Delete all {len(refs)} instances of "{category}" from the TMC working copy?',
+            parent=self._tmc_density_window, default='no', icon='warning'):
+            return
+        removed = self._tmc_density_remove_refs(refs)
+        self._tmc_density_dirty = self._tmc_density_dirty or bool(removed)
+        self._refresh_tmc_density()
+        self.status_var.set(f'TMC category deleted: {category}, {removed} instances.')
+
+    def _confirm_tmc_density_reset(self):
+        thread = getattr(self, '_tmc_density_save_thread', None)
+        if thread is not None and thread.is_alive():
+            return
+        if not messagebox.askyesno(
+            'Reset TMC density',
+            'Restore all TMC GroundObjects from the original XML files?\n\n'
+            'All unsaved TMC density changes will be discarded.',
+            parent=self._tmc_density_window, default='no', icon='warning'):
+            return
+        changed = False
+        for doc in self._tmc_density_docs.values():
+            # Reset only files that currently have a patch or were edited in RAM.
+            if doc['dirty'] or doc['patched'].is_file():
+                doc['tree'] = copy.deepcopy(doc['baseline'])
+                doc['dirty'] = True
+                changed = True
+        self._tmc_density_dirty = changed
+        self._refresh_tmc_density()
+        self.status_var.set('TMC density reset to original data. Click Save to write the reset.')
+
+    @staticmethod
+    def _tmc_density_write_documents(documents, events):
+        dirty = [doc for doc in documents if doc.get('dirty')]
+        total = len(dirty)
+        saved = 0
+        for index, doc in enumerate(dirty, 1):
+            patched = doc['patched']
+            temporary = None
+            try:
+                fd, name = tempfile.mkstemp(
+                    prefix='.tmc_density_', suffix='.xml', dir=patched.parent)
+                os.close(fd)
+                temporary = Path(name)
+                doc['tree'].write(
+                    temporary, encoding='utf-8', xml_declaration=False,
+                    short_empty_elements=True)
+                if not temporary.is_file() or temporary.stat().st_size == 0:
+                    raise OSError(f'Empty temporary XML: {temporary.name}')
+                # Validate before atomically replacing the previous patch.
+                validated = TmcXmlRamCache._parse(temporary)
+                os.replace(temporary, patched)
+                doc['tree'] = validated
+                doc['dirty'] = False
+                saved += 1
+                events.put(('progress', (index, total, patched.name)))
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+        return saved, total
+
+    def _save_tmc_density(self):
+        if getattr(self, '_tmc_density_save_thread', None) is not None:
+            return
+        dirty_docs = [doc for doc in self._tmc_density_docs.values() if doc.get('dirty')]
+        if not dirty_docs:
+            self._tmc_density_info.set('No TMC density changes to save.')
+            return
+
+        # Never serialize large TMC XML trees on Tk's main thread. Doing so can
+        # block native message processing long enough for the packaged app to be
+        # terminated without a Python traceback.
+        self._tmc_density_save_events = queue.Queue()
+        self._tmc_density_info.set(f'Saving 0/{len(dirty_docs)} changed TMC XML files...')
+        self._xml_loading_show(f'Saving TMC density: 0/{len(dirty_docs)}', 0.0)
+        self._set_running(True, 'xml')
+
+        def worker():
+            try:
+                result = self._tmc_density_write_documents(
+                    dirty_docs, self._tmc_density_save_events)
+                self._tmc_density_save_events.put(('done', (result, None)))
+            except Exception as exc:
+                self._tmc_density_save_events.put(
+                    ('done', (None, f'{type(exc).__name__}: {exc}')))
+
+        self._tmc_density_save_thread = threading.Thread(
+            target=worker, daemon=True, name='TmcDensitySave')
+        self._tmc_density_save_thread.start()
+        self.after(75, self._poll_tmc_density_save)
+
+    def _poll_tmc_density_save(self):
+        events = getattr(self, '_tmc_density_save_events', None)
+        if events is None:
+            return
+        finished = None
+        for _ in range(100):
+            try:
+                kind, payload = events.get_nowait()
+            except queue.Empty:
+                break
+            if kind == 'progress':
+                done, total, name = payload
+                self._tmc_density_info.set(
+                    f'Saving {done}/{total} changed TMC XML files: {name}')
+                self._xml_loading_show(
+                    f'Saving TMC density: {done}/{total}', done / total if total else 1.0)
+            else:
+                finished = payload
+        if finished is None:
+            thread = getattr(self, '_tmc_density_save_thread', None)
+            if thread is not None and thread.is_alive():
+                self.after(75, self._poll_tmc_density_save)
+                return
+            # A worker must always enqueue a terminal event. If it did not, give
+            # the user a visible diagnostic instead of silently leaving a lock.
+            finished = (None, 'TMC density save worker stopped without a result.')
+
+        result, error = finished
+        self._tmc_density_save_thread = None
+        self._tmc_density_save_events = None
+        self._set_running(False, 'xml')
+        self._xml_loading_finish(error)
+        if error:
+            self._tmc_density_info.set(f'TMC density save failed: {error}')
+            messagebox.showerror(
+                'Change Density (tmc)', f'TMC density could not be saved:\n{error}',
+                parent=self._tmc_density_window)
+            return
+
+        saved, total = result
+        self._tmc_density_dirty = any(
+            doc.get('dirty') for doc in self._tmc_density_docs.values())
+        self.tmc_ram_cache = None
+        self.tmc_ram_folder = None
+        self._refresh_tmc_density()
+        text = f'TMC density saved: {saved}/{total} changed XML files.'
+        self.status_var.set(text)
+        self.tmc_ram_info.set(text + ' Reload TMC data.')
+        map_window = getattr(self, 'tmc_object_map_window', None)
+        if map_window is not None and map_window.winfo_exists():
+            self._close_tmc_object_map()
+
+    def _close_tmc_density(self):
+        window = getattr(self, '_tmc_density_window', None)
+        thread = getattr(self, '_tmc_density_save_thread', None)
+        if thread is not None and thread.is_alive():
+            messagebox.showwarning(
+                'Change Density (tmc)', 'TMC density files are currently being saved.',
+                parent=window)
+            return False
+        if self._tmc_density_dirty:
+            if not messagebox.askyesno(
+                'Change Density (tmc)',
+                'Discard all unsaved TMC density changes?',
+                parent=window, default='no', icon='warning'):
+                return False
+        if window is not None and window.winfo_exists():
+            window.destroy()
+        self._tmc_density_window = None
+        self._tmc_density_docs = None
+        return True
 
     def _open_object_density(self):
         if not self._object_profiles_available(1):
