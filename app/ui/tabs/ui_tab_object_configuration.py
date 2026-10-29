@@ -299,39 +299,48 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
 
         header = ctk.CTkFrame(tab, fg_color="transparent")
         header.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
-        header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             header,
             text="Object Configuration",
             font=ctk.CTkFont(size=22, weight="bold"),
-        ).grid(row=0, column=0, sticky="w")
+        ).pack(anchor="w")
 
+        objects_1 = ctk.CTkFrame(tab)
+        objects_1.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+        ctk.CTkLabel(
+            objects_1,
+            text="Objects (rd3d)",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 8))
+        objects_1_buttons = ctk.CTkFrame(objects_1, fg_color="transparent")
+        objects_1_buttons.pack(fill="x", padx=16, pady=(0, 16))
         ctk.CTkButton(
-            header,
-            text="Show Object Map",
-            width=160,
-            height=34,
-            fg_color="#555555",
-            hover_color="#666666",
+            objects_1_buttons, text="Objects Table (rd3d)", width=180, height=38,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._open_object_configuration_table_1,
+        ).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(
+            objects_1_buttons, text="Show Object Map (rd3d)", width=180, height=38,
+            font=ctk.CTkFont(weight="bold"),
             command=self._open_object_configuration_map,
-        ).grid(row=0, column=1, sticky="e")
-
-        content = ctk.CTkFrame(tab)
-        content.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
+        ).pack(side="left", padx=(0, 10))
         ctk.CTkButton(
-            content, text="Change Density", width=180, height=38,
+            objects_1_buttons, text="Change Density (rd3d)", width=180, height=38,
             font=ctk.CTkFont(weight="bold"), command=self._open_object_density,
-        ).pack(anchor="w", padx=16, pady=(16, 8))
-        table_buttons = ctk.CTkFrame(content, fg_color="transparent")
-        table_buttons.pack(fill="x", padx=0, pady=(0, 8))
+        ).pack(side="left")
+
+        objects_2 = ctk.CTkFrame(tab)
+        objects_2.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="ew")
+        ctk.CTkLabel(
+            objects_2,
+            text="Objects (tmc)",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 8))
         ctk.CTkButton(
-            table_buttons, text="Objects Table 1", width=180, height=38,
-            font=ctk.CTkFont(weight="bold"), command=self._open_object_configuration_table_1,
-        ).pack(side="left", padx=16, pady=8)
-        ctk.CTkButton(
-            table_buttons, text="Objects Table 2", width=180, height=38,
-            font=ctk.CTkFont(weight="bold"), command=self._open_object_configuration_table_2,
-        ).pack(side="left", padx=(0, 16), pady=8)
+            objects_2, text="Objects Table (tmc)", width=180, height=38,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._open_object_configuration_table_2,
+        ).pack(anchor="w", padx=16, pady=(0, 16))
 
         self._tmc_ram_initialize(tab)
         self.object_configuration_table1_window = None
@@ -1818,9 +1827,9 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         self.tmc_ram_events = queue.Queue()
         self.tmc_ram_folder = None
         self.tmc_ram_progress = None
+        # Internal cache state. It is shown in the table/status dialogs when
+        # relevant, not as a loose label in the Object Configuration tab.
         self.tmc_ram_info = tk.StringVar(value="XML cache: no island loaded")
-        ctk.CTkLabel(tab, textvariable=self.tmc_ram_info, anchor="w").grid(
-            row=2, column=0, padx=20, pady=(0, 12), sticky="ew")
         self.after(75, self._tmc_ram_poll)
 
     def _tmc_ram_is_busy(self):

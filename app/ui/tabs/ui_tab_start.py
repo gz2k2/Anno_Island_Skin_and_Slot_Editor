@@ -581,10 +581,19 @@ class StartTabMixin:
     def _select_start_a7m_file(self):
         if self._busy():
             return
-        current = self.unpack_file_var.get().strip()
+        temporary_map_variable = getattr(self, "default_custom_maps_var", None)
+        temporary_map_folder = (
+            temporary_map_variable.get().strip()
+            if temporary_map_variable is not None else ""
+        )
+        initial_dir = None
+        if temporary_map_folder:
+            configured_folder = Path(temporary_map_folder).expanduser()
+            if configured_folder.is_dir():
+                initial_dir = str(configured_folder)
         value = filedialog.askopenfilename(
             title="Select A7M file",
-            initialdir=str(Path(current).parent) if current and Path(current).parent.is_dir() else None,
+            initialdir=initial_dir,
             filetypes=[("Anno island", "*.a7m"), ("All files", "*.*")],
         )
         if not value:
