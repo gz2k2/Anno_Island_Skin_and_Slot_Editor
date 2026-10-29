@@ -956,14 +956,12 @@ class IslandSlotEditingMixin:
             mountain[0] - entrance[0],
             mountain[2] - entrance[2],
         )
-        # MineSlot 1000029 has a mirrored Z-facing axis: horizontal placement
-        # already points correctly, while vertical placement is reversed. Mirror
-        # only the Z delta instead of applying another constant rotation.
+        # Mesh/Orientation controls the visible unbuilt mine graphic and is
+        # handled separately below. The constructed mine building uses Direction
+        # and has a native +90-degree asset-axis offset for GUID 1000029.
         mine_direction = direction
         if placement["guid"] == "1000029":
-            delta_x = mountain[0] - entrance[0]
-            delta_z = mountain[2] - entrance[2]
-            mine_direction = math.atan2(delta_x, -delta_z) % (2.0 * math.pi)
+            mine_direction = (direction + math.pi / 2.0) % (2.0 * math.pi)
         for node, node_direction in (
             (mine, mine_direction),
             (workarea, direction),
