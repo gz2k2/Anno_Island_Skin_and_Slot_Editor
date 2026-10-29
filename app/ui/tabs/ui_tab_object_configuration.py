@@ -336,11 +336,18 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             text="Objects (tmc)",
             font=ctk.CTkFont(size=18, weight="bold"),
         ).pack(anchor="w", padx=16, pady=(14, 8))
+        objects_2_buttons = ctk.CTkFrame(objects_2, fg_color="transparent")
+        objects_2_buttons.pack(fill="x", padx=16, pady=(0, 16))
         ctk.CTkButton(
-            objects_2, text="Objects Table (tmc)", width=180, height=38,
+            objects_2_buttons, text="Objects Table (tmc)", width=180, height=38,
             font=ctk.CTkFont(weight="bold"),
             command=self._open_object_configuration_table_2,
-        ).pack(anchor="w", padx=16, pady=(0, 16))
+        ).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(
+            objects_2_buttons, text="Show Object Map (tmc)", width=180, height=38,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._open_tmc_object_map,
+        ).pack(side="left")
 
         self._tmc_ram_initialize(tab)
         self.object_configuration_table1_window = None
@@ -961,6 +968,246 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         self._render_object_configuration_table_2()
         self.status_var.set("Objects Table 2 reset to original values (RAM only)")
 
+
+    @staticmethod
+    def _tmc_map_split_numbers(value):
+        return tuple(part for part in str(value or "").replace(",", ".").split() if part)
+
+    def _load_tmc_object_map_points(self):
+        root_value = self.tmc_data_meshes_var.get().strip()
+        root = Path(root_value) if root_value else None
+        if root is None or not root.exists():
+            raise FileNotFoundError("Please select an existing TMC meshes folder first.")
+        files = [root] if root.is_file() else sorted(root.rglob("*_patched.xml"))
+        if not files and root.is_dir():
+            files = sorted(root.rglob("*_original.xml"))
+        # Prefer patched per relative stem, but keep original-only pages.
+        if root.is_dir():
+            selected = {}
+            for path in sorted(root.rglob("*.xml")):
+                name = path.name
+                if not (name.endswith("_original.xml") or name.endswith("_patched.xml")):
+                    continue
+                key = str(path.relative_to(root)).replace("_patched.xml", ".xml").replace("_original.xml", ".xml")
+                if key not in selected or name.endswith("_patched.xml"):
+                    selected[key] = path
+            files = list(selected.values())
+        points = []
+        errors = []
+        for path in files:
+            try:
+                tree, _repaired, _repairs = self._parse_xml_tolerant(path)
+                root_node = tree.getroot()
+                for ground in root_node.iter():
+                    if self._object_configuration_local_tag(ground) != "GroundObjects":
+                        continue
+                    for group in list(ground):
+                        values = {self._object_configuration_local_tag(child): (child.text or "").strip()
+                                  for child in list(group)}
+                        filename = values.get("FileName", "").strip()
+                        positions = self._tmc_map_split_numbers(values.get("PositionsXZ"))
+                        rotations = self._tmc_map_split_numbers(values.get("RotationsY"))
+                        coverages = self._tmc_map_split_numbers(values.get("Coverages"))
+                        if not filename or len(positions) % 2:
+                            continue
+                        category = get_category_for_object(filename, self.CONFIG_FILE)
+                        for index in range(len(positions) // 2):
+                            try:
+                                x, z = float(positions[index * 2]), float(positions[index * 2 + 1])
+                            except ValueError:
+                                continue
+                            points.append({
+                                "x": x, "z": z, "path": filename, "category": category,
+                                "id": values.get("ID", ""),
+                                "rotation": rotations[index] if index < len(rotations) else "",
+                                "coverage": coverages[index] if index < len(coverages) else "",
+                                "source": str(path),
+                            })
+            except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+                errors.append(f"{path.name}: {exc}")
+        # The same GroundObject can be repeated in several TMC LOD pages.
+        # Keep one visual point per complete instance identity so the map does
+        # not render stacked duplicate dots for identical world objects.
+        unique = {}
+        for point in points:
+            key = (
+                point["path"].strip().replace("\\", "/").casefold(),
+                point["x"], point["z"], point["id"],
+                point["rotation"], point["coverage"],
+            )
+            existing = unique.get(key)
+            if existing is None:
+                point["sources"] = [point["source"]]
+                unique[key] = point
+            else:
+                existing["sources"].append(point["source"])
+        return list(unique.values()), files, errors, root
+
+    def _open_tmc_object_map(self):
+        status = self._show_object_operation_status("Loading TMC GroundObjects...")
+        try:
+            try:
+                bounds = MapViewTemplate.read_playable_area(
+                    self.gamedata_file_var.get().strip(), parser=self._parse_xml_tolerant)
+                points, files, errors, root = self._load_tmc_object_map_points()
+            except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+                messagebox.showerror("Object Map (tmc)", str(exc))
+                return
+            self.tmc_object_map_bounds = bounds
+            self.tmc_object_map_points = points
+            self.tmc_object_map_zoom = 1.0
+            self.tmc_object_map_pan_x = self.tmc_object_map_pan_y = 0.0
+            self.tmc_object_map_pan_start = None
+            self.tmc_object_map_visible = {p["category"]: True for p in points}
+            categories = sorted(self.tmc_object_map_visible, key=str.casefold)
+            self.tmc_object_map_colors = {c: TYPE_CATEGORY_COLORS[i % len(TYPE_CATEGORY_COLORS)]
+                                          for i, c in enumerate(categories)}
+            self.tmc_object_map_image_source, self.tmc_object_map_image_path = MapViewTemplate.load_background(
+                (root if root.is_dir() else root.parent,
+                 (root if root.is_dir() else root.parent).parent,
+                 Path(self.gamedata_file_var.get().strip()).parent), direct_first=True)
+            self.tmc_object_map_image_tk = None
+            window = getattr(self, "tmc_object_map_window", None)
+            if window is not None and window.winfo_exists():
+                window.destroy()
+            self.tmc_object_map_info_var = tk.StringVar(
+                value=f"{len(points)} TMC GroundObject instances from {len(files)} XML files"
+                      + (f"; {len(errors)} files skipped" if errors else ""))
+            self.tmc_object_map_selection_var = tk.StringVar(
+                value="Move the pointer over a dot to display TMC object details. Read-only view.")
+            built = MapViewTemplate.build_map_window(
+                self, title="Object Map (tmc)", heading="Object Map (tmc)",
+                info_variable=self.tmc_object_map_info_var,
+                selection_variable=self.tmc_object_map_selection_var,
+                close_command=self._close_tmc_object_map,
+                redraw_command=self._redraw_tmc_object_map,
+                legend_builder=lambda: None,
+                maximize_button_attribute="tmc_object_map_maximize_button",
+            )
+            self.tmc_object_map_window = built["window"]
+            self.tmc_object_map_canvas = built["canvas"]
+            self.tmc_object_map_legend = built["legend"]
+            self._rebuild_tmc_object_map_legend()
+            MapViewTemplate.bind_map_mouse(
+                self.tmc_object_map_canvas,
+                configure=self._redraw_tmc_object_map,
+                motion=self._tmc_object_map_motion,
+                leave=lambda _e: self.tmc_object_map_selection_var.set(
+                    "Move the pointer over a dot to display TMC object details. Read-only view."),
+                wheel=self._tmc_object_map_wheel,
+                pan_start=self._tmc_object_map_pan_begin,
+                pan_move=self._tmc_object_map_pan_move,
+                pan_end=self._tmc_object_map_pan_end,
+                redraw=self._redraw_tmc_object_map,
+                owner=self.tmc_object_map_window,
+            )
+            self._redraw_tmc_object_map()
+        finally:
+            self._hide_object_operation_status(status)
+
+    def _close_tmc_object_map(self):
+        window = getattr(self, "tmc_object_map_window", None)
+        if window is not None and window.winfo_exists():
+            window.destroy()
+        self.tmc_object_map_window = None
+        self.tmc_object_map_canvas = None
+        return True
+
+    def _tmc_object_map_geometry(self):
+        canvas = self.tmc_object_map_canvas
+        width, height = max(2, canvas.winfo_width()), max(2, canvas.winfo_height())
+        min_x, max_x, min_z, max_z = self.tmc_object_map_bounds
+        scale = min((width - 2 * MapViewTemplate.MAP_MARGIN) / max(max_x - min_x, 1e-9),
+                    (height - 2 * MapViewTemplate.MAP_MARGIN) / max(max_z - min_z, 1e-9)) * self.tmc_object_map_zoom
+        iw, ih = (max_x - min_x) * scale, (max_z - min_z) * scale
+        left = (width - iw) / 2 + self.tmc_object_map_pan_x
+        top = (height - ih) / 2 + self.tmc_object_map_pan_y
+        return min_x, min_z, scale, left, top, iw, ih
+
+    def _redraw_tmc_object_map(self, *_args):
+        canvas = getattr(self, "tmc_object_map_canvas", None)
+        if canvas is None or not canvas.winfo_exists():
+            return
+        canvas.delete("all")
+        min_x, min_z, scale, left, top, iw, ih = self._tmc_object_map_geometry()
+        source = self.tmc_object_map_image_source
+        if source is not None:
+            self.tmc_object_map_image_tk, vx, vy = MapViewTemplate.cached_viewport_photo(
+                source, left, top, iw, ih, canvas.winfo_width(), canvas.winfo_height(), {})
+            if self.tmc_object_map_image_tk is not None:
+                canvas.create_image(vx, vy, image=self.tmc_object_map_image_tk, anchor="nw")
+        canvas.create_rectangle(left, top, left + iw, top + ih,
+                                outline=MapViewTemplate.BACKGROUND_BORDER_COLOR)
+        self.tmc_object_map_screen_points = []
+        radius = 3
+        for point in self.tmc_object_map_points:
+            if not self.tmc_object_map_visible.get(point["category"], True):
+                continue
+            sx = left + (point["x"] - min_x) * scale
+            # World +Z points upward in the existing RD3D/MapView contract,
+            # while Tk canvas +Y points downward. Invert Z so TMC points use
+            # exactly the same island/background orientation as every map view.
+            sy = top + ih - (point["z"] - min_z) * scale
+            if -radius <= sx <= canvas.winfo_width() + radius and -radius <= sy <= canvas.winfo_height() + radius:
+                color = self.tmc_object_map_colors.get(point["category"], DEFAULT_TYPE_COLOR)
+                canvas.create_oval(sx-radius, sy-radius, sx+radius, sy+radius,
+                                   fill=color, outline="#111111", width=1)
+                self.tmc_object_map_screen_points.append((sx, sy, point))
+        MapViewTemplate.draw_zoom_indicator(canvas, self.tmc_object_map_zoom)
+
+    def _tmc_object_map_motion(self, event):
+        nearest = None
+        best = MapViewTemplate.HOVER_HIT_RADIUS ** 2
+        for sx, sy, point in getattr(self, "tmc_object_map_screen_points", ()):
+            distance = (sx-event.x)**2 + (sy-event.y)**2
+            if distance <= best:
+                best, nearest = distance, point
+        if nearest is None:
+            self.tmc_object_map_selection_var.set(
+                "Move the pointer over a dot to display TMC object details. Read-only view.")
+        else:
+            self.tmc_object_map_selection_var.set(
+                f'{nearest["category"]} | X/Z: {nearest["x"]:g} / {nearest["z"]:g} | '
+                f'ID: {nearest["id"] or "-"} | RotationY: {nearest["rotation"] or "-"} | '
+                f'Coverage: {nearest["coverage"] or "-"}\n{nearest["path"]}\n'
+                f'TMC sources / LOD copies: {len(nearest.get("sources", (nearest["source"],)))}\n'
+                f'{nearest["source"]}')
+
+    def _tmc_object_map_wheel(self, event):
+        delta = 1 if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4 else -1
+        self.tmc_object_map_zoom = min(20.0, max(0.25, self.tmc_object_map_zoom * (1.15 if delta > 0 else 1/1.15)))
+        self._redraw_tmc_object_map()
+        return "break"
+
+    def _tmc_object_map_pan_begin(self, event):
+        self.tmc_object_map_pan_start = MapViewTemplate.begin_pan(
+            event, self.tmc_object_map_pan_x, self.tmc_object_map_pan_y)
+
+    def _tmc_object_map_pan_move(self, event):
+        result = MapViewTemplate.move_pan(self.tmc_object_map_pan_start, event)
+        if result is not None:
+            self.tmc_object_map_pan_x, self.tmc_object_map_pan_y = result
+            self._redraw_tmc_object_map()
+
+    def _tmc_object_map_pan_end(self, _event):
+        self.tmc_object_map_pan_start = None
+
+    def _rebuild_tmc_object_map_legend(self):
+        legend = self.tmc_object_map_legend
+        for widget in legend.winfo_children():
+            widget.destroy()
+        for index, category in enumerate(sorted(self.tmc_object_map_visible, key=str.casefold)):
+            visible = self.tmc_object_map_visible[category]
+            color = self.tmc_object_map_colors[category]
+            MapViewTemplate.build_legend_button(
+                legend, text=category, color=color, visible=visible,
+                command=lambda c=category: self._toggle_tmc_object_map_category(c),
+                row=index // 5, column=index % 5)
+
+    def _toggle_tmc_object_map_category(self, category):
+        self.tmc_object_map_visible[category] = not self.tmc_object_map_visible[category]
+        self._rebuild_tmc_object_map_legend()
+        self._redraw_tmc_object_map()
 
     def _open_object_configuration_map(self):
         status = self._show_object_operation_status("Loading...")

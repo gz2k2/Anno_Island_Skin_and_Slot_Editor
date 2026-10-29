@@ -7,6 +7,7 @@ from app.templates.template_popup import PopupTemplate
 from app.templates.template_treeview import TreeviewTemplate
 from app.templates.template_statuswindow import StatusWindowTemplate
 import os
+import json
 import subprocess
 import sys
 import queue
@@ -780,6 +781,38 @@ class StartTabMixin:
         finally:
             self._event("done", ("start", ok, self.stop_event.is_set()))
 
+    @staticmethod
+    def _start_tmc_cache_path(meshes: Path) -> Path:
+        return meshes / ".tmc_unpack_cache.json"
+
+    def _start_load_tmc_unpack_cache(self, meshes: Path):
+        path = self._start_tmc_cache_path(meshes)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+            if data.get("schema") == 1 and isinstance(data.get("files"), dict):
+                return data["files"]
+        except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+            pass
+        return {}
+
+    def _start_save_tmc_unpack_cache(self, meshes: Path, entries):
+        path = self._start_tmc_cache_path(meshes)
+        temporary = path.with_name(path.name + ".tmp")
+        payload = {"schema": 1, "files": entries}
+        try:
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def _start_tmc_signature(path: Path):
+        stat = path.stat()
+        return {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+
     def _start_extract_tmc_files(self, data_dir: Path):
         meshes = Path(self.tmc_data_meshes_var.get().strip())
         if not meshes.is_dir():
@@ -791,7 +824,8 @@ class StartTabMixin:
             raise RuntimeError(f"TMC extraction could not find the meshes folder:\n{meshes}")
 
         tmc_files = sorted(
-            (path for path in meshes.rglob("*") if path.is_file() and path.suffix.casefold() == ".tmc"),
+            (path for path in meshes.rglob("*")
+             if path.is_file() and path.suffix.casefold() == ".tmc"),
             key=lambda path: str(path).casefold(),
         )
         total = len(tmc_files)
@@ -799,100 +833,126 @@ class StartTabMixin:
             self._event("log_start", "\nNo TMC files found.\n")
             return
 
-        try:
-            workers = int(self.tmc_parallel_var.get().strip())
-        except ValueError:
-            workers = 4
-        workers = max(1, min(workers, 32, total))
+        old_cache = self._start_load_tmc_unpack_cache(meshes)
+        new_cache = {}
+        pending = []
+        skipped = 0
+        for path in tmc_files:
+            relative = path.relative_to(meshes).as_posix()
+            signature = self._start_tmc_signature(path)
+            original = path.with_name(f"{path.stem}_original.xml")
+            cached = old_cache.get(relative)
+            if cached == signature and original.is_file() and original.stat().st_size > 0:
+                new_cache[relative] = signature
+                skipped += 1
+            else:
+                pending.append((path, relative, signature))
 
-        # Keep the log visibly alive without flooding Tk's event queue. For small
-        # collections every file is reported; larger collections are updated in
-        # roughly 20 steps (5 percent intervals).
-        report_every = 1 if total <= 20 else max(1, total // 20)
+        try:
+            requested_workers = int(self.tmc_parallel_var.get().strip())
+        except ValueError:
+            requested_workers = 4
+        workers = max(1, min(requested_workers, 32, len(pending) or 1))
         self._event(
             "log_start",
-            f"\nStarting TMC conversion: {total} file(s), {workers} parallel worker(s).\n"
-            f"Progress is reported every {report_every} completed file(s).\n",
+            f"\nTMC scan: {total} file(s), {skipped} unchanged and skipped, "
+            f"{len(pending)} to decode.\n",
         )
-        self._event("status", f"TMC conversion: 0/{total} (0%)")
+        if not pending:
+            self._start_save_tmc_unpack_cache(meshes, new_cache)
+            self._event("status", f"TMC conversion: {total}/{total} (100%, cached)")
+            self._event("progress_start", 0.82)
+            self._event("log_start", "TMC conversion completed from cache; no FileDBReader processes started.\n")
+            return
 
+        report_every = 1 if len(pending) <= 20 else max(1, len(pending) // 20)
+        self._event(
+            "log_start",
+            f"Starting TMC conversion with {workers} parallel worker(s).\n",
+        )
         successful = 0
         failures = []
         completed = 0
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="StartTMC") as executor:
-            jobs = {executor.submit(self._start_extract_single_tmc, path): path for path in tmc_files}
+            jobs = {
+                executor.submit(self._start_extract_single_tmc, path): (path, relative, signature)
+                for path, relative, signature in pending
+            }
             for job in as_completed(jobs):
-                path = jobs[job]
+                path, relative, signature = jobs[job]
                 if self.stop_event.is_set():
-                    for pending in jobs:
-                        pending.cancel()
+                    for future in jobs:
+                        future.cancel()
                     raise RuntimeError("Stop requested")
-
                 completed += 1
                 try:
                     job.result()
                     successful += 1
+                    new_cache[relative] = signature
                 except Exception as exc:
                     failures.append((path, str(exc)))
+                    self._event("log_start", f"[{completed}/{len(pending)}] FAILED: {path.name}\n  {exc}\n")
+                overall = skipped + completed
+                percent = round(overall * 100 / total)
+                self._event("status", f"TMC conversion: {overall}/{total} ({percent}%)")
+                self._event("progress_start", 0.65 + (0.17 * overall / total))
+                if completed == 1 or completed == len(pending) or completed % report_every == 0:
                     self._event(
                         "log_start",
-                        f"[{completed}/{total}] FAILED: {path.name}\n  {exc}\n",
+                        f"[{overall}/{total}] TMC files processed ({percent}%) | "
+                        f"decoded: {successful} | cached: {skipped} | failed: {len(failures)}\n",
                     )
 
-                percent = round(completed * 100 / total)
-                self._event("status", f"TMC conversion: {completed}/{total} ({percent}%)")
-
-                # TMC occupies the Start workflow range from 65 to 82 percent.
-                self._event(
-                    "progress_start",
-                    0.65 + (0.17 * completed / total),
-                )
-
-                if completed == 1 or completed == total or completed % report_every == 0:
-                    self._event(
-                        "log_start",
-                        f"[{completed}/{total}] TMC files processed ({percent}%) | "
-                        f"successful: {successful} | failed: {len(failures)}\n",
-                    )
-
+        # Persist successful results even when individual files failed. Failed
+        # inputs are retried automatically during the next unpack operation.
+        self._start_save_tmc_unpack_cache(meshes, new_cache)
         self._event(
             "log_start",
-            f"TMC conversion completed: {successful} successful, "
+            f"TMC conversion completed: {successful} decoded, {skipped} cached, "
             f"{len(failures)} failed, {total} total.\n",
         )
-
+        if failures:
+            self._event("log_start", "\nTMC FILES WITH ERRORS:\n")
+            for failed_file, error in failures:
+                self._event("log_start", f"  - {failed_file}\n    {error}\n")
 
     def _start_extract_single_tmc(self, tmc_file: Path):
+        # Remove only FileDBReader's transient target. The retained
+        # *_original.xml remains available until the replacement is complete.
+        generated = tmc_file.with_suffix(".xml")
+        generated.unlink(missing_ok=True)
         self._start_run_tmc_process([
             self.fdb_var.get(), "decompress", "-f", str(tmc_file),
             "-i", self.tmc_format_var.get(), "-y",
         ], tmc_file.parent)
-        generated = tmc_file.with_suffix(".xml")
-        if not generated.is_file():
-            raise RuntimeError(f"FileDBReader did not create XML for {tmc_file.name}.")
+        if not generated.is_file() or generated.stat().st_size == 0:
+            generated.unlink(missing_ok=True)
+            raise RuntimeError(f"FileDBReader did not create a non-empty XML for {tmc_file.name}.")
         self._rename_replace(generated, tmc_file.with_name(f"{tmc_file.stem}_original.xml"))
 
     def _start_run_tmc_process(self, command, cwd):
         if self.stop_event.is_set():
             raise RuntimeError("Stop requested")
+        kwargs = {
+            "cwd": str(cwd),
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
         if os.name == "nt":
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 2
-            process = subprocess.Popen(
-                [str(value) for value in command], cwd=str(cwd),
-                startupinfo=startupinfo, creationflags=subprocess.CREATE_NEW_CONSOLE,
-            )
-        else:
-            process = subprocess.Popen([str(value) for value in command], cwd=str(cwd))
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startupinfo
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        process = subprocess.Popen([str(value) for value in command], **kwargs)
         with self.parallel_processes_lock:
             self.parallel_processes.add(process)
         try:
             while process.poll() is None:
-                if self.stop_event.is_set():
+                if self.stop_event.wait(0.05):
                     self._kill_specific_process(process)
                     raise RuntimeError("Stop requested")
-                time.sleep(0.1)
             if process.returncode:
                 raise RuntimeError(f"FileDBReader exited with code {process.returncode}.")
         finally:
