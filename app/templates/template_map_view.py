@@ -401,7 +401,7 @@ class MapViewTemplate:
         owner, *, title, heading="Overview map", info_variable, selection_variable,
         close_command, redraw_command, legend_builder,
         maximize_button_attribute=None, object_edit_help=False,
-        slot_edit_help=False, **_unused,
+        slot_edit_help=False, show_selection_status=True, **_unused,
     ):
         built = PopupTemplate.create_window(
             owner, title=title, heading=heading,
@@ -513,18 +513,23 @@ class MapViewTemplate:
 
         canvas = tk.Canvas(window, bg=MapViewTemplate.CANVAS_BACKGROUND, highlightthickness=0, borderwidth=0, cursor="crosshair")
         canvas.grid(row=4, column=0, padx=18, pady=(0, 8), sticky="nsew")
-        ctk.CTkLabel(
-            window, textvariable=selection_variable, justify="left", anchor="w", wraplength=1000,
-            fg_color=MapViewTemplate.SELECTION_BACKGROUND,
-            text_color=MapViewTemplate.PRIMARY_TEXT_COLOR,
-            font=ctk.CTkFont(size=MapViewTemplate.SELECTION_FONT_SIZE), corner_radius=6,
-        ).grid(row=5,column=0,padx=18,pady=(0,15),ipady=7,sticky="ew")
+        selection_status = None
+        if show_selection_status:
+            selection_status = ctk.CTkLabel(
+                window, textvariable=selection_variable, justify="left", anchor="w", wraplength=1000,
+                fg_color=MapViewTemplate.SELECTION_BACKGROUND,
+                text_color=MapViewTemplate.PRIMARY_TEXT_COLOR,
+                font=ctk.CTkFont(size=MapViewTemplate.SELECTION_FONT_SIZE), corner_radius=6,
+            )
+            selection_status.grid(
+                row=5, column=0, padx=18, pady=(0, 15), ipady=7, sticky="ew")
         legend_builder()
         window.after(100, redraw_command)
         return {"window": window, "canvas": canvas, "legend": legend,
                 "header": built["header"], "maximize_button": built["maximize_button"],
                 "help_container": help_container, "help_frame": help_frame,
-                "help_button": help_button, "help_expanded": help_expanded}
+                "help_button": help_button, "help_expanded": help_expanded,
+                "selection_status": selection_status}
 
     @staticmethod
     def read_playable_area(path, parser=None):

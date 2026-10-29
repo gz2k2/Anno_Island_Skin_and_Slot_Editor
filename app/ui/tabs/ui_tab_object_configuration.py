@@ -1030,23 +1030,10 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                             })
             except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
                 errors.append(f"{path.name}: {exc}")
-        # The same GroundObject can be repeated in several TMC LOD pages.
-        # Keep one visual point per complete instance identity so the map does
-        # not render stacked duplicate dots for identical world objects.
-        unique = {}
-        for point in points:
-            key = (
-                point["path"].strip().replace("\\", "/").casefold(),
-                point["x"], point["z"], point["id"],
-                point["rotation"], point["coverage"],
-            )
-            existing = unique.get(key)
-            if existing is None:
-                point["sources"] = [point["source"]]
-                unique[key] = point
-            else:
-                existing["sources"].append(point["source"])
-        return list(unique.values()), files, errors, root
+        # Display every GroundObject instance exactly as stored in every TMC
+        # XML file. Do not merge equal position/path/rotation values across LOD
+        # pages: the Object Map count and dots must represent the raw TMC data.
+        return points, files, errors, root
 
     def _open_tmc_object_map(self):
         status = self._show_object_operation_status("Loading TMC GroundObjects...")
@@ -1065,8 +1052,13 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             self.tmc_object_map_pan_start = None
             self.tmc_object_map_visible = {p["category"]: True for p in points}
             categories = sorted(self.tmc_object_map_visible, key=str.casefold)
-            self.tmc_object_map_colors = {c: TYPE_CATEGORY_COLORS[i % len(TYPE_CATEGORY_COLORS)]
-                                          for i, c in enumerate(categories)}
+            # Use exactly the same shared category-color allocator as Objects
+            # Table (tmc). A category therefore keeps one color in table, map,
+            # legend, hover marker and TMC Density.
+            self.tmc_object_map_colors = {
+                category: self._object_configuration_color_for_category(category)
+                for category in categories
+            }
             self.tmc_object_map_image_source, self.tmc_object_map_image_path = MapViewTemplate.load_background(
                 (root if root.is_dir() else root.parent,
                  (root if root.is_dir() else root.parent).parent,
@@ -1075,11 +1067,12 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             window = getattr(self, "tmc_object_map_window", None)
             if window is not None and window.winfo_exists():
                 window.destroy()
+            self.tmc_object_map_base_info = (
+                f"{len(points)} TMC GroundObject instances from {len(files)} XML files"
+                + (f"; {len(errors)} files skipped" if errors else ""))
             self.tmc_object_map_info_var = tk.StringVar(
-                value=f"{len(points)} TMC GroundObject instances from {len(files)} XML files"
-                      + (f"; {len(errors)} files skipped" if errors else ""))
-            self.tmc_object_map_selection_var = tk.StringVar(
-                value="Move the pointer over a dot to display TMC object details. Read-only view.")
+                value=self.tmc_object_map_base_info)
+            self.tmc_object_map_selection_var = tk.StringVar(value="")
             built = MapViewTemplate.build_map_window(
                 self, title="Object Map (tmc)", heading="Object Map (tmc)",
                 info_variable=self.tmc_object_map_info_var,
@@ -1088,6 +1081,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 redraw_command=self._redraw_tmc_object_map,
                 legend_builder=lambda: None,
                 maximize_button_attribute="tmc_object_map_maximize_button",
+                show_selection_status=False,
             )
             self.tmc_object_map_window = built["window"]
             self.tmc_object_map_canvas = built["canvas"]
@@ -1097,8 +1091,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 self.tmc_object_map_canvas,
                 configure=self._redraw_tmc_object_map,
                 motion=self._tmc_object_map_motion,
-                leave=lambda _e: self.tmc_object_map_selection_var.set(
-                    "Move the pointer over a dot to display TMC object details. Read-only view."),
+                leave=self._tmc_object_map_leave,
                 wheel=self._tmc_object_map_wheel,
                 pan_start=self._tmc_object_map_pan_begin,
                 pan_move=self._tmc_object_map_pan_move,
@@ -1144,7 +1137,10 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         canvas.create_rectangle(left, top, left + iw, top + ih,
                                 outline=MapViewTemplate.BACKGROUND_BORDER_COLOR)
         self.tmc_object_map_screen_points = []
-        radius = 3
+        radius = MapViewTemplate.DOT_RADIUS
+        if MapViewTemplate.zoom_active(canvas):
+            MapViewTemplate.draw_zoom_indicator(canvas, self.tmc_object_map_zoom)
+            return
         for point in self.tmc_object_map_points:
             if not self.tmc_object_map_visible.get(point["category"], True):
                 continue
@@ -1155,33 +1151,62 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             sy = top + ih - (point["z"] - min_z) * scale
             if -radius <= sx <= canvas.winfo_width() + radius and -radius <= sy <= canvas.winfo_height() + radius:
                 color = self.tmc_object_map_colors.get(point["category"], DEFAULT_TYPE_COLOR)
-                canvas.create_oval(sx-radius, sy-radius, sx+radius, sy+radius,
-                                   fill=color, outline="#111111", width=1)
+                canvas.create_oval(
+                    sx-radius, sy-radius, sx+radius, sy+radius,
+                    fill=color, outline=MapViewTemplate.DOT_OUTLINE_COLOR,
+                    width=MapViewTemplate.DOT_OUTLINE_WIDTH,
+                    tags=("map_content", "map_point"))
                 self.tmc_object_map_screen_points.append((sx, sy, point))
         MapViewTemplate.draw_zoom_indicator(canvas, self.tmc_object_map_zoom)
 
-    def _tmc_object_map_motion(self, event):
-        nearest = None
-        best = MapViewTemplate.HOVER_HIT_RADIUS ** 2
-        for sx, sy, point in getattr(self, "tmc_object_map_screen_points", ()):
-            distance = (sx-event.x)**2 + (sy-event.y)**2
-            if distance <= best:
-                best, nearest = distance, point
-        if nearest is None:
-            self.tmc_object_map_selection_var.set(
-                "Move the pointer over a dot to display TMC object details. Read-only view.")
-        else:
-            self.tmc_object_map_selection_var.set(
-                f'{nearest["category"]} | X/Z: {nearest["x"]:g} / {nearest["z"]:g} | '
-                f'ID: {nearest["id"] or "-"} | RotationY: {nearest["rotation"] or "-"} | '
-                f'Coverage: {nearest["coverage"] or "-"}\n{nearest["path"]}\n'
-                f'TMC sources / LOD copies: {len(nearest.get("sources", (nearest["source"],)))}\n'
-                f'{nearest["source"]}')
+    def _tmc_object_map_leave(self, _event=None):
+        canvas = getattr(self, "tmc_object_map_canvas", None)
+        if canvas is not None and canvas.winfo_exists():
+            canvas.delete("tmc_hover")
+        self.tmc_object_map_info_var.set(self.tmc_object_map_base_info)
 
+    def _tmc_object_map_motion(self, event):
+        canvas = self.tmc_object_map_canvas
+        if canvas is None or MapViewTemplate.middle_pan_active(canvas, event):
+            return
+        nearest = None
+        nearest_screen = None
+        best = float(MapViewTemplate.HOVER_HIT_RADIUS) ** 2
+        for sx, sy, point in getattr(self, "tmc_object_map_screen_points", ()):
+            distance = (sx - event.x) ** 2 + (sy - event.y) ** 2
+            if distance <= best:
+                best, nearest, nearest_screen = distance, point, (sx, sy)
+        canvas.delete("tmc_hover")
+        if nearest is None:
+            self.tmc_object_map_info_var.set(self.tmc_object_map_base_info)
+            return
+        sx, sy = nearest_screen
+        radius = MapViewTemplate.DOT_RADIUS * MapViewTemplate.DOT_HOVER_SCALE
+        color = self.tmc_object_map_colors.get(nearest["category"], DEFAULT_TYPE_COLOR)
+        canvas.create_oval(
+            sx-radius, sy-radius, sx+radius, sy+radius,
+            fill=color, outline=MapViewTemplate.DOT_HOVER_OUTLINE_COLOR,
+            width=MapViewTemplate.DOT_HOVER_OUTLINE_WIDTH, tags=("tmc_hover", "map_hover"))
+        self.tmc_object_map_info_var.set(
+            f'{nearest["category"]} | X/Z {nearest["x"]:g} / {nearest["z"]:g} | '
+            f'ID {nearest["id"] or "-"} | RotationY {nearest["rotation"] or "-"} | '
+            f'Coverage {nearest["coverage"] or "-"}')
     def _tmc_object_map_wheel(self, event):
-        delta = 1 if getattr(event, "delta", 0) > 0 or getattr(event, "num", 0) == 4 else -1
-        self.tmc_object_map_zoom = min(20.0, max(0.25, self.tmc_object_map_zoom * (1.15 if delta > 0 else 1/1.15)))
-        self._redraw_tmc_object_map()
+        # Use the exact shared MapViewTemplate zoom levels, pointer focus and
+        # 500 ms debounce lifecycle used by the RD3D Object Map.
+        (
+            self.tmc_object_map_zoom,
+            self.tmc_object_map_pan_x,
+            self.tmc_object_map_pan_y,
+        ) = MapViewTemplate.handle_focus_zoom_event(
+            self.tmc_object_map_canvas,
+            self.tmc_object_map_bounds,
+            self.tmc_object_map_zoom,
+            self.tmc_object_map_pan_x,
+            self.tmc_object_map_pan_y,
+            event,
+            self._redraw_tmc_object_map,
+        )
         return "break"
 
     def _tmc_object_map_pan_begin(self, event):
@@ -1191,11 +1216,16 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
     def _tmc_object_map_pan_move(self, event):
         result = MapViewTemplate.move_pan(self.tmc_object_map_pan_start, event)
         if result is not None:
+            old_x, old_y = self.tmc_object_map_pan_x, self.tmc_object_map_pan_y
             self.tmc_object_map_pan_x, self.tmc_object_map_pan_y = result
-            self._redraw_tmc_object_map()
+            MapViewTemplate.move_pan_background(
+                self.tmc_object_map_canvas, result[0] - old_x, result[1] - old_y)
+        return "break"
 
     def _tmc_object_map_pan_end(self, _event):
         self.tmc_object_map_pan_start = None
+        self._redraw_tmc_object_map()
+        return "break"
 
     def _rebuild_tmc_object_map_legend(self):
         legend = self.tmc_object_map_legend
@@ -2904,15 +2934,31 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             bar.grid(row=1, column=0, padx=18, pady=(0, 8), sticky='ew')
             ctk.CTkLabel(bar, text='Density reduction (%)').pack(side='left', padx=(0, 10))
             ctk.CTkEntry(bar, textvariable=self._tmc_density_percent, width=90).pack(side='left')
-            ctk.CTkButton(bar, text='Reset', width=90,
-                          command=self._confirm_tmc_density_reset).pack(side='right', padx=(8, 0))
-            ctk.CTkButton(bar, text='Save', width=90,
-                          command=self._save_tmc_density).pack(side='right')
             ctk.CTkLabel(window, textvariable=self._tmc_density_info, anchor='w').grid(
                 row=2, column=0, padx=18, pady=(0, 8), sticky='ew')
-            self._tmc_density_rows = ctk.CTkScrollableFrame(window)
-            self._tmc_density_rows.grid(row=3, column=0, padx=18, pady=(0, 16), sticky='nsew')
-            self._tmc_density_rows.grid_columnconfigure(0, weight=1)
+            self._tmc_density_table = TemplateTable(
+                window,
+                (
+                    TableColumn('type', 'Category', anchor='w'),
+                    TableColumn('count', 'Count', width=100),
+                    TableColumn('density', 'Change Density', anchor='w'),
+                ),
+                row_builder=self._tmc_density_row,
+            )
+            self._tmc_density_table.grid(
+                row=3, column=0, padx=18, pady=(0, 8), sticky='nsew')
+
+            actions = ctk.CTkFrame(window, fg_color='transparent')
+            actions.grid(row=4, column=0, padx=18, pady=(0, 16), sticky='e')
+            ctk.CTkButton(
+                actions, text='Reset', width=90,
+                fg_color='#B3261E', hover_color='#8C1D18',
+                command=self._confirm_tmc_density_reset,
+            ).pack(side='left', padx=(0, 8))
+            ctk.CTkButton(
+                actions, text='Save', width=90,
+                command=self._save_tmc_density,
+            ).pack(side='left')
             self._refresh_tmc_density()
         finally:
             self._hide_object_operation_status(status)
@@ -2924,29 +2970,117 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 groups.setdefault(item[0], []).append((doc, *item[1:]))
         return groups
 
+    def _tmc_density_row(self, row, data, _index):
+        """Render one TMC Density row with the RD3D Density table design."""
+        table = self._tmc_density_table
+        for column_index, column in enumerate(table.columns):
+            row.grid_columnconfigure(
+                column_index,
+                weight=column.weight,
+                minsize=column.width + 2 * TemplateTable.CELL_PADX,
+            )
+        font = ctk.CTkFont(size=TemplateTable.BODY_FONT_SIZE)
+        row.configure(height=table.row_height)
+        for column_index, key in ((0, 'type'), (1, 'count')):
+            column = table.columns[column_index]
+            ctk.CTkLabel(
+                row,
+                text=str(data[key]),
+                width=column.width,
+                anchor='w',
+                justify='left',
+                font=font,
+                text_color=(
+                    data['color'] if key == 'type'
+                    else TemplateTable.BODY_TEXT_COLOR
+                ),
+            ).grid(
+                row=0,
+                column=column_index,
+                padx=TemplateTable.CELL_PADX,
+                pady=5,
+                sticky='nw',
+            )
+        actions = ctk.CTkFrame(row, fg_color='transparent')
+        actions.grid(
+            row=0, column=2, padx=TemplateTable.CELL_PADX,
+            pady=5, sticky='w')
+        ctk.CTkButton(
+            actions,
+            text='-',
+            width=self._tmc_density_button_width,
+            height=28,
+            command=lambda category=data['type']: self._reduce_tmc_density(category),
+        ).pack(side='left', padx=2)
+        ctk.CTkButton(
+            actions,
+            text='Delete',
+            width=72,
+            height=28,
+            fg_color=PopupTemplate.DANGER_BUTTON_FG_COLOR,
+            hover_color=PopupTemplate.DANGER_BUTTON_HOVER_COLOR,
+            command=lambda category=data['type']: self._delete_tmc_density(category),
+        ).pack(side='left', padx=(6, 2))
+
     def _refresh_tmc_density(self):
         groups = self._tmc_density_category_instances()
         self._tmc_density_groups = groups
-        frame = self._tmc_density_rows
-        for widget in frame.winfo_children():
-            widget.destroy()
         total = sum(len(items) for items in groups.values())
         suffix = ' | Unsaved changes' if self._tmc_density_dirty else ''
-        error_text = f' | {len(self._tmc_density_errors)} file errors' if self._tmc_density_errors else ''
+        error_text = (
+            f' | {len(self._tmc_density_errors)} file errors'
+            if self._tmc_density_errors else '')
         self._tmc_density_info.set(
-            f'{total} TMC GroundObject instances in {len(groups)} categories{error_text}{suffix}')
-        for row, category in enumerate(sorted(groups, key=str.casefold)):
-            ctk.CTkLabel(frame, text=category, anchor='w').grid(
-                row=row, column=0, padx=(8, 12), pady=4, sticky='ew')
-            ctk.CTkLabel(frame, text=str(len(groups[category])), width=80).grid(
-                row=row, column=1, padx=4, pady=4)
-            ctk.CTkButton(frame, text='- xx%', width=82,
-                          command=lambda c=category: self._reduce_tmc_density(c)).grid(
-                row=row, column=2, padx=4, pady=4)
-            ctk.CTkButton(frame, text='Delete', width=82,
-                          fg_color='#B3261E', hover_color='#8C1D18',
-                          command=lambda c=category: self._delete_tmc_density(c)).grid(
-                row=row, column=3, padx=(4, 8), pady=4)
+            f'{total} TMC GroundObject instances in {len(groups)} categories'
+            f'{error_text}{suffix}')
+
+        data = [
+            {
+                'type': category,
+                'count': len(instances),
+                'color': self._object_configuration_picker_color(category),
+            }
+            for category, instances in sorted(
+                groups.items(), key=lambda item: item[0].casefold())
+        ]
+        body_font = ctk.CTkFont(size=TemplateTable.BODY_FONT_SIZE)
+        header_font = ctk.CTkFont(
+            size=TemplateTable.HEADER_FONT_SIZE,
+            weight=TemplateTable.HEADER_FONT_WEIGHT,
+        )
+
+        def measured(key, title):
+            longest = max(
+                (body_font.measure(str(item[key])) for item in data), default=0)
+            return math.ceil(max(longest, header_font.measure(title))) + 12
+
+        button_font = ctk.CTkFont(size=TemplateTable.BUTTON_FONT_SIZE)
+        self._tmc_density_button_width = (
+            math.ceil(button_font.measure('-')) + 24)
+        action_width = max(
+            self._tmc_density_button_width + 4 + 72 + 10,
+            math.ceil(header_font.measure('Change Density')) + 12,
+        )
+        columns = (
+            TableColumn(
+                'type', 'Category', width=measured('type', 'Category'), anchor='w'),
+            TableColumn(
+                'count', 'Count', width=measured('count', 'Count'), anchor='w'),
+            TableColumn(
+                'density', 'Change Density', width=action_width, anchor='w'),
+        )
+        table = self._tmc_density_table
+        table.columns = columns
+        for widget in table.header.winfo_children():
+            widget.destroy()
+        for column_index, column in enumerate(columns):
+            table.header.grid_columnconfigure(
+                column_index,
+                weight=column.weight,
+                minsize=column.width + 2 * TemplateTable.HEADER_PADX,
+            )
+        table._build_header()
+        table.set_rows(data)
 
     def _tmc_density_remove_refs(self, references):
         # Group by XML entry and remove descending indices from all parallel arrays.
@@ -3162,6 +3296,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             window.destroy()
         self._tmc_density_window = None
         self._tmc_density_docs = None
+        self._tmc_density_table = None
         return True
 
     def _open_object_density(self):
