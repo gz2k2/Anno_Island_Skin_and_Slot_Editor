@@ -72,7 +72,7 @@ def object_map_lod_pixels(zoom):
     return max(1, int(OBJECT_MAP_LOD_NEAR_PIXELS))
 
 
-# Object Table 1/2 use localized display titles while preserving the shared
+# Objects Table (rd3d)/(tmc) use localized display titles while preserving the shared
 # column keys, widths, alignment, colors, and row behavior.
 _OBJECT_TABLE_COLUMN_TITLES = {"Type": "Category", "Path": "Object"}
 OBJECT_TABLE_COLUMNS = tuple(
@@ -133,7 +133,7 @@ class TmcXmlRamCache:
                 working = self._parse(patched) if patched.is_file() else copy.deepcopy(baseline)
                 before, current = self._entries(baseline), self._entries(working)
                 # Patched TMC files may contain fewer GroundObjects after Density
-                # deletion. Objects Table 2 therefore indexes the current working
+                # deletion. Objects Table (tmc) therefore indexes the current working
                 # entries instead of requiring a one-to-one original count.
                 self.documents[original] = {
                     'original': baseline, 'working': working, 'target': patched,
@@ -254,7 +254,7 @@ class Rd3dXmlRamCache:
         # Other editors still write RD3D directly. Never overwrite their changes
         # with a stale cache: reload the cache explicitly after such a conflict.
         if self._signature() != self.signature:
-            raise ValueError('rd3d_patched.xml changed outside Objects Table 1. '
+            raise ValueError('rd3d_patched.xml changed outside Objects Table (rd3d). '
                              'Use Reload Cache, then reapply your edits.')
         tree = copy.deepcopy(self.working)
         nodes, _ = self._names(tree)
@@ -425,6 +425,25 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
     def _hide_object_operation_status(popup):
         StatusWindowTemplate.close(popup)
 
+    def _paint_object_operation_status_before_work(self, popup):
+        """Guarantee that a status popup is visible before blocking XML work."""
+        if not StatusWindowTemplate.exists(popup):
+            return
+        window = popup.get("window") if isinstance(popup, dict) else popup
+        try:
+            window.deiconify()
+            window.lift()
+            window.update_idletasks()
+            window.update()
+            # Give Windows/CustomTkinter one complete event-loop turn to map and
+            # paint the native popup before synchronous XML parsing begins.
+            painted = tk.BooleanVar(master=window, value=False)
+            window.after(40, lambda: painted.set(True))
+            window.wait_variable(painted)
+            window.update_idletasks()
+        except (tk.TclError, AttributeError):
+            pass
+
 
     def _rd3d_table1_has_unsaved_changes(self):
         cache = getattr(self, "rd3d_ram_cache", None)
@@ -444,7 +463,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         )
 
     def _rd3d_discard_working_copy(self, clear_cache=True):
-        """Discard RD3D/Object Map/Table 1/Density RAM only. TMC is untouched."""
+        """Discard RD3D/Object Map/Objects Table (rd3d)/Density RAM only. TMC is untouched."""
         self._map_edit_session = None
         self._density_session = None
         self._density_cache = None
@@ -493,7 +512,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             return False
         if self.object_configuration_table1_window is not None and self.object_configuration_table1_window.winfo_exists():
             self.object_configuration_table1_window.deiconify(); PopupTemplate.safe_activate(self.object_configuration_table1_window); self._render_object_configuration_table_1(); return True
-        built=PopupTemplate.create_window(self,title="Objects Table 1",heading="Objects Table 1",close_command=self._close_object_configuration_table_1)
+        built=PopupTemplate.create_window(self,title="Objects Table (rd3d)",heading="Objects Table (rd3d)",close_command=self._close_object_configuration_table_1)
         window=built["window"]; self.object_configuration_table1_window=window
         window.grid_columnconfigure(0,weight=1); window.grid_rowconfigure(3,weight=1)
         ctk.CTkLabel(window,textvariable=self.object_configuration_table1_info_var,text_color=PopupTemplate.SECONDARY_TEXT_COLOR).grid(row=1,column=0,padx=PopupTemplate.HEADER_PADX,pady=(0,8),sticky="w")
@@ -518,8 +537,8 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         window = self.object_configuration_table1_window
         if self._rd3d_table1_has_unsaved_changes():
             if not messagebox.askyesno(
-                "Objects Table 1",
-                "Objects Table 1 contains unsaved RD3D path changes.\n\n"
+                "Objects Table (rd3d)",
+                "Objects Table (rd3d) contains unsaved RD3D path changes.\n\n"
                 "Closing this popup will discard those table changes from RAM.\n\n"
                 "Close and discard the unsaved changes?",
                 parent=window,
@@ -831,8 +850,8 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
     def _reset_object_configuration_table_1(self):
         owner = self.object_configuration_table1_window
         if not messagebox.askyesno(
-            "Reset Objects Table 1",
-            "Reset all Object values in Objects Table 1 to their original values?\n\n"
+            "Reset Objects Table (rd3d)",
+            "Reset all Object values in Objects Table (rd3d) to their original values?\n\n"
             "All unsaved table changes will be discarded.",
             parent=owner,
             default="no",
@@ -843,7 +862,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             variable.set(original)
         self._render_object_configuration_table_1()
         self._rd3d_ram_preview_paths()
-        self.status_var.set("Objects Table 1 reset to original values (RAM only)")
+        self.status_var.set("Objects Table (rd3d) reset to original values (RAM only)")
 
 
     def _open_object_configuration_table_2(self):
@@ -867,7 +886,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             self._render_object_configuration_table_2()
             return
         built = PopupTemplate.create_window(
-            self, title="Objects Table 2", heading="Objects Table 2",
+            self, title="Objects Table (tmc)", heading="Objects Table (tmc)",
             close_command=self._close_object_configuration_table_2,
         )
         window = built["window"]
@@ -960,8 +979,8 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
     def _reset_object_configuration_table_2(self):
         owner = self.object_configuration_table2_window
         if not messagebox.askyesno(
-            "Reset Objects Table 2",
-            "Reset all Object values in Objects Table 2 to their original values?\n\n"
+            "Reset Objects Table (tmc)",
+            "Reset all Object values in Objects Table (tmc) to their original values?\n\n"
             "All unsaved table changes will be discarded.",
             parent=owner,
             default="no",
@@ -971,7 +990,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         for _index, _object_id, original, _count, variable in self.object_configuration_table2_rows:
             variable.set(original)
         self._render_object_configuration_table_2()
-        self.status_var.set("Objects Table 2 reset to original values (RAM only)")
+        self.status_var.set("Objects Table (tmc) reset to original values (RAM only)")
 
 
     @staticmethod
@@ -1030,13 +1049,34 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                             })
             except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
                 errors.append(f"{path.name}: {exc}")
-        # Display every GroundObject instance exactly as stored in every TMC
-        # XML file. Do not merge equal position/path/rotation values across LOD
-        # pages: the Object Map count and dots must represent the raw TMC data.
-        return points, files, errors, root
+        # Collapse equal GroundObject records from different TMC pages/LODs to
+        # one logical map dot. Identity matches Change Density (tmc): asset path,
+        # ID, world X/Z, RotationY and Coverage. Keep every physical source on
+        # the logical point for diagnostics, but never draw duplicate dots.
+        logical = {}
+        for point in points:
+            key = (
+                point["path"].strip().replace("\\", "/").casefold(),
+                str(point["id"] or "").strip(),
+                self._tmc_density_float_key(point["x"]),
+                self._tmc_density_float_key(point["z"]),
+                str(point["rotation"] or "").strip(),
+                str(point["coverage"] or "").strip(),
+            )
+            existing = logical.get(key)
+            if existing is None:
+                point["sources"] = [point["source"]]
+                logical[key] = point
+            else:
+                existing["sources"].append(point["source"])
+        logical_points = list(logical.values())
+        self._tmc_object_map_physical_count = len(points)
+        self._tmc_object_map_duplicate_count = len(points) - len(logical_points)
+        return logical_points, files, errors, root
 
     def _open_tmc_object_map(self):
         status = self._show_object_operation_status("Loading TMC GroundObjects...")
+        self._paint_object_operation_status_before_work(status)
         try:
             try:
                 bounds = MapViewTemplate.read_playable_area(
@@ -1067,8 +1107,14 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             window = getattr(self, "tmc_object_map_window", None)
             if window is not None and window.winfo_exists():
                 window.destroy()
+            physical_count = getattr(
+                self, "_tmc_object_map_physical_count", len(points))
+            duplicate_count = getattr(
+                self, "_tmc_object_map_duplicate_count", 0)
             self.tmc_object_map_base_info = (
-                f"{len(points)} TMC GroundObject instances from {len(files)} XML files"
+                f"{len(points)} logical TMC GroundObjects from {len(files)} XML files | "
+                f"{duplicate_count} LOD duplicates hidden "
+                f"({physical_count} XML instances)"
                 + (f"; {len(errors)} files skipped" if errors else ""))
             self.tmc_object_map_info_var = tk.StringVar(
                 value=self.tmc_object_map_base_info)
@@ -1266,14 +1312,15 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             window.lift()
             PopupTemplate.safe_activate(window)
             self._rebuild_object_configuration_map_legend()
+            self.after_idle(self._rebuild_object_configuration_map_legend)
             self._schedule_object_configuration_map_redraw()
             return
 
         built = MapViewTemplate.build_map_window(
             self,
-            title="Object Map",
+            title="Object Map (rd3d)",
             object_edit_help=True,
-            heading="Object Map",
+            heading="Object Map (rd3d)",
             info_variable=self.object_configuration_map_info_var,
             selection_variable=self.object_configuration_map_selection_var,
             close_command=self._close_object_configuration_map,
@@ -1319,6 +1366,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             return
         self._bind_object_configuration_map_canvas()
         self._rebuild_object_configuration_map_legend()
+        self.after_idle(self._rebuild_object_configuration_map_legend)
         self._schedule_object_configuration_map_redraw()
 
     def _close_object_configuration_map(self):
@@ -1329,9 +1377,9 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         if self._rd3d_has_unsaved_work():
             if not messagebox.askyesno(
                 "Object Map",
-                "There are unsaved RD3D changes in Object Map, Objects Table 1 or Density.\n\n"
+                "There are unsaved RD3D changes in Object Map, Objects Table (rd3d) or Density.\n\n"
                 "Closing Object Map will discard the shared RD3D working copy from RAM. "
-                "TMC / Objects Table 2 data will not be changed.\n\n"
+                "TMC / Objects Table (tmc) data will not be changed.\n\n"
                 "Close and discard the unsaved RD3D changes?",
                 parent=window,
                 default="no",
@@ -1378,12 +1426,32 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         except ValueError:
             return None
 
+    def _sync_object_configuration_map_categories(self, points=None):
+        """Synchronize RD3D filter state from the exact points being rendered."""
+        points = self.object_configuration_map_points if points is None else points
+        previous = dict(getattr(self, 'object_configuration_map_category_visible', {}))
+        categories = []
+        seen = set()
+        for point in points:
+            category = point[5]
+            if category not in seen:
+                seen.add(category)
+                categories.append(category)
+        self.object_configuration_map_category_visible = {
+            category: previous.get(category, True) for category in categories
+        }
+        for category in categories:
+            self._object_configuration_color_for_category(category)
+        return categories
+
     def _load_object_configuration_map_data(self):
         pending=getattr(self,'_map_edit_session',None)
         if pending is not None and pending.dirty and pending.cache is self.rd3d_ram_cache:
             if pending.cache.path == Path(self.rd3d_file_var.get().strip()):
-                self.object_configuration_map_points=self._map_preview_points(pending)
-                self.object_configuration_map_file_names=pending.paths()
+                self.object_configuration_map_points = self._map_preview_points(pending)
+                self.object_configuration_map_file_names = pending.paths()
+                self._sync_object_configuration_map_categories(
+                    self.object_configuration_map_points)
                 return True
         try:
             bounds = MapViewTemplate.read_playable_area(
@@ -1471,16 +1539,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 points.append((prop_index, x, z, y, (position_node.text or "").strip(), category))
 
         self.object_configuration_map_points = points
-        categories = []
-        for point in points:
-            if point[5] not in categories:
-                categories.append(point[5])
-        self.object_configuration_map_category_visible = {
-            category: self.object_configuration_map_category_visible.get(category, True)
-            for category in categories
-        }
-        for category in categories:
-            self._object_configuration_color_for_category(category)
+        categories = self._sync_object_configuration_map_categories(points)
 
         self.object_configuration_map_zoom = MapViewTemplate.DEFAULT_POINT_ZOOM
         self.object_configuration_map_pan_x = 0.0
@@ -1594,6 +1653,8 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         legend = self.object_configuration_map_legend
         if legend is None or not legend.winfo_exists():
             return
+        self._sync_object_configuration_map_categories(
+            self.object_configuration_map_points)
         for widget in legend.winfo_children():
             widget.destroy()
         self.object_configuration_map_category_buttons = {}
@@ -1603,7 +1664,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         )
         for index, category in enumerate(categories):
             visible = self.object_configuration_map_category_visible.get(category, True)
-            color = self.object_configuration_map_category_colors[category]
+            color = self._object_configuration_color_for_category(category)
             button = MapViewTemplate.build_legend_button(
                 legend, text=category, color=color, visible=visible,
                 command=lambda value=category: self._toggle_object_configuration_map_category(value),
@@ -2258,10 +2319,10 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 self.tmc_ram_info.set(f"Saved: {saved} files | {changed} changes | {len(errors)} errors")
                 self.status_var.set(self.tmc_ram_info.get())
                 if errors:
-                    messagebox.showwarning('Objects Table 2',
+                    messagebox.showwarning('Objects Table (tmc)',
                         f'Partial save: {saved} files saved. Failed files remain retryable.\n' + '\n'.join(errors[:10]))
                 else:
-                    messagebox.showinfo('Objects Table 2', self.tmc_ram_info.get())
+                    messagebox.showinfo('Objects Table (tmc)', self.tmc_ram_info.get())
 
     def _load_object_configuration_table_2_data(self):
         # Once loaded, opening the editor never scans or parses XML again.
@@ -2274,18 +2335,18 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
 
     def _save_object_configuration_table_2(self, notify=True):
         if self.worker and self.worker.is_alive():
-            messagebox.showwarning('Objects Table 2', 'A file operation is running. Save after it completes.')
+            messagebox.showwarning('Objects Table (tmc)', 'A file operation is running. Save after it completes.')
             return False
         if self._tmc_ram_is_busy():
             return False
         cache = self.tmc_ram_cache
         if cache is None or cache.folder != Path(self.tmc_data_meshes_var.get().strip()):
-            messagebox.showerror('Objects Table 2', 'Load the current island XML cache first.')
+            messagebox.showerror('Objects Table (tmc)', 'Load the current island XML cache first.')
             return False
         # Read Tk variables once on the UI thread. The worker receives strings.
         values = [row[4].get().strip() for row in self.object_configuration_table2_rows]
         if any(not value for value in values):
-            messagebox.showerror('Objects Table 2', 'Filename must not be empty.')
+            messagebox.showerror('Objects Table (tmc)', 'Filename must not be empty.')
             return False
         return self._tmc_ram_begin('Saving', lambda progress: cache.save(values, progress))
 
@@ -2318,7 +2379,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         if rd is not None and (len(rows) != len(rd.values) or any(
             row[2].get().strip() != saved for row, saved in zip(rows, rd.values)
         )):
-            dirty.append('Objects Table 1')
+            dirty.append('Objects Table (rd3d)')
         tmc = self.tmc_ram_cache
         rows = self.object_configuration_table2_rows
         if tmc is not None:
@@ -2331,7 +2392,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 for row, (_, _, _, refs) in zip(rows, tmc.groups)
                 for path, ordinal in refs
             ):
-                dirty.append('Objects Table 2')
+                dirty.append('Objects Table (tmc)')
         if dirty and not messagebox.askyesno(
             'Reload Cache',
             'Discard unsaved changes in ' + ' and '.join(dirty)
@@ -2434,9 +2495,9 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 self.after(350, self._open_object_density)
             self._tmc_ram_preload()
         else:
-            self.tmc_ram_info.set(f'Objects Table 1 saved: {result} changed paths')
+            self.tmc_ram_info.set(f'Objects Table (rd3d) saved: {result} changed paths')
             self.status_var.set(self.tmc_ram_info.get())
-            messagebox.showinfo('Objects Table 1', self.tmc_ram_info.get())
+            messagebox.showinfo('Objects Table (rd3d)', self.tmc_ram_info.get())
             # Do not rebuild Tk variables: edits made after the Save click must
             # remain visible and can be saved with the next snapshot.
             if self.rd3d_ram_cache.path != Path(self.rd3d_file_var.get().strip()):
@@ -2452,15 +2513,15 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
 
     def _save_object_configuration_table_1(self, notify=True):
         if self._tmc_ram_is_busy() or (self.worker and self.worker.is_alive()):
-            messagebox.showwarning('Objects Table 1', 'A file operation is in progress.')
+            messagebox.showwarning('Objects Table (rd3d)', 'A file operation is in progress.')
             return False
         cache = self.rd3d_ram_cache
         if cache is None or cache.path != Path(self.rd3d_file_var.get().strip()):
-            messagebox.showerror('Objects Table 1', 'Load the current RD3D cache first.')
+            messagebox.showerror('Objects Table (rd3d)', 'Load the current RD3D cache first.')
             return False
         values = [row[2].get().strip() for row in self.object_configuration_table1_rows]
         if any(not value for value in values):
-            messagebox.showerror('Objects Table 1', 'Path must not be empty.')
+            messagebox.showerror('Objects Table (rd3d)', 'Path must not be empty.')
             return False
         return self._tmc_ram_begin('RD3D Saving', lambda progress: cache.save(values, progress))
 
@@ -2473,10 +2534,9 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         for index, x, z, y, position, _category in self.object_configuration_map_points:
             path = values[index] if 0 <= index < len(values) else ''
             category = self._classify_object_configuration_path(path)
-            self._object_configuration_color_for_category(category)
-            self.object_configuration_map_category_visible.setdefault(category, True)
             points.append((index, x, z, y, position, category))
         self.object_configuration_map_points = points
+        self._sync_object_configuration_map_categories(points)
         window = self.object_configuration_map_window
         if window is not None and window.winfo_exists():
             self._rebuild_object_configuration_map_legend()
@@ -2912,6 +2972,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             window.deiconify(); window.lift(); PopupTemplate.safe_activate(window)
             return
         status = self._show_object_operation_status('Loading TMC density data...')
+        self._paint_object_operation_status_before_work(status)
         try:
             try:
                 folder, docs, errors = self._tmc_density_load_documents()
@@ -2963,12 +3024,105 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         finally:
             self._hide_object_operation_status(status)
 
+    @staticmethod
+    def _tmc_density_float_key(value):
+        """Normalize XML float text for stable LOD-copy identity keys."""
+        try:
+            number = float(str(value).replace(',', '.'))
+        except (TypeError, ValueError):
+            return str(value or '').strip()
+        return f'{number:.6f}'.rstrip('0').rstrip('.') or '0'
+
     def _tmc_density_category_instances(self):
-        groups = {}
+        """Return logical instances with every matching LOD reference attached.
+
+        FileName, ID, world X/Z, RotationY and Coverage identify one logical
+        GroundObject. Equal records in multiple TMC pages/LODs are deliberately
+        grouped so every edit is applied to all physical XML copies.
+        """
+        grouped = {}
+        physical_count = 0
         for doc in self._tmc_density_docs.values():
             for item in self._tmc_density_scan_tree(doc['tree'], doc['patched']):
-                groups.setdefault(item[0], []).append((doc, *item[1:]))
-        return groups
+                category, ground, entry, fields, index, filename = item
+                positions = (fields['positionsxz'].text or '').split()
+                rotations = (
+                    (fields.get('rotationsy').text or '').split()
+                    if fields.get('rotationsy') is not None else [])
+                coverages = (
+                    (fields.get('coverages').text or '').split()
+                    if fields.get('coverages') is not None else [])
+                x_text, z_text = positions[index * 2:index * 2 + 2]
+                rotation = rotations[index] if index < len(rotations) else ''
+                coverage = coverages[index] if index < len(coverages) else ''
+                object_id = (fields.get('id').text or '').strip() if fields.get('id') is not None else ''
+                x_key = self._tmc_density_float_key(x_text)
+                z_key = self._tmc_density_float_key(z_text)
+                identity = (
+                    filename.strip().replace('\\', '/').casefold(),
+                    object_id,
+                    x_key,
+                    z_key,
+                    rotation.strip(),
+                    coverage.strip(),
+                )
+                category_groups = grouped.setdefault(category, {})
+                logical = category_groups.get(identity)
+                if logical is None:
+                    logical = {
+                        'key': identity,
+                        'x': float(str(x_text).replace(',', '.')),
+                        'z': float(str(z_text).replace(',', '.')),
+                        'refs': [],
+                    }
+                    category_groups[identity] = logical
+                logical['refs'].append((doc, ground, entry, fields, index, filename))
+                physical_count += 1
+        self._tmc_density_physical_count = physical_count
+        return {
+            category: list(instances.values())
+            for category, instances in grouped.items()
+        }
+
+    @staticmethod
+    def _tmc_density_hotspots(instances, cell_size=16.0):
+        """Build a spatial hotspot map from fixed world-coordinate cells.
+
+        Fixed cells avoid chain-merging dense vegetation across an entire island:
+        every 16 x 16 world-unit area remains an independent density hotspot.
+        """
+        cell_size = max(1.0, float(cell_size))
+        hotspots = {}
+        for instance in instances:
+            cell = (
+                math.floor(instance['x'] / cell_size),
+                math.floor(instance['z'] / cell_size),
+            )
+            hotspots.setdefault(cell, []).append(instance)
+        return [hotspots[key] for key in sorted(hotspots)]
+
+    @staticmethod
+    def _tmc_density_hotspot_quotas(hotspots, target):
+        """Distribute an exact delete target proportionally across hotspots."""
+        total = sum(len(hotspot) for hotspot in hotspots)
+        if total <= 0 or target <= 0:
+            return [0] * len(hotspots)
+        target = min(int(target), total)
+        exact = [len(hotspot) * target / total for hotspot in hotspots]
+        quotas = [min(len(hotspots[i]), math.floor(value)) for i, value in enumerate(exact)]
+        remaining = target - sum(quotas)
+        order = sorted(
+            range(len(hotspots)),
+            key=lambda i: (exact[i] - quotas[i], len(hotspots[i])),
+            reverse=True,
+        )
+        for index in order:
+            if remaining <= 0:
+                break
+            if quotas[index] < len(hotspots[index]):
+                quotas[index] += 1
+                remaining -= 1
+        return quotas
 
     def _tmc_density_row(self, row, data, _index):
         """Render one TMC Density row with the RD3D Density table design."""
@@ -3026,12 +3180,15 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         groups = self._tmc_density_category_instances()
         self._tmc_density_groups = groups
         total = sum(len(items) for items in groups.values())
+        physical_total = getattr(self, '_tmc_density_physical_count', total)
+        duplicate_count = max(0, physical_total - total)
         suffix = ' | Unsaved changes' if self._tmc_density_dirty else ''
         error_text = (
             f' | {len(self._tmc_density_errors)} file errors'
             if self._tmc_density_errors else '')
         self._tmc_density_info.set(
-            f'{total} TMC GroundObject instances in {len(groups)} categories'
+            f'{total} logical TMC GroundObjects in {len(groups)} categories | '
+            f'{physical_total} XML copies ({duplicate_count} LOD duplicates)'
             f'{error_text}{suffix}')
 
         data = [
@@ -3116,15 +3273,36 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             percent = float(self._tmc_density_percent.get().strip().replace(',', '.'))
             if not 0 < percent <= 100:
                 raise ValueError('Density reduction must be greater than 0 and at most 100.')
-            refs = list(self._tmc_density_groups.get(category, ()))
-            count = min(len(refs), max(1, round(len(refs) * percent / 100.0))) if refs else 0
-            # Stable selection makes repeated preview/reset behavior reproducible.
-            rng = random.Random(f'{category}|{len(refs)}|{percent:g}')
-            selected = rng.sample(refs, count) if count else []
-            removed = self._tmc_density_remove_refs(selected)
-            self._tmc_density_dirty = self._tmc_density_dirty or bool(removed)
+            logical_instances = list(self._tmc_density_groups.get(category, ()))
+            target = (
+                min(len(logical_instances), max(
+                    1, round(len(logical_instances) * percent / 100.0)))
+                if logical_instances else 0
+            )
+            hotspots = self._tmc_density_hotspots(logical_instances)
+            quotas = self._tmc_density_hotspot_quotas(hotspots, target)
+            selected_logical = []
+            for hotspot_index, (hotspot, quota) in enumerate(zip(hotspots, quotas)):
+                if quota <= 0:
+                    continue
+                centroid_x = sum(item['x'] for item in hotspot) / len(hotspot)
+                centroid_z = sum(item['z'] for item in hotspot) / len(hotspot)
+                rng = random.Random(
+                    f'{category}|{percent:g}|{len(logical_instances)}|'
+                    f'{centroid_x:.4f}|{centroid_z:.4f}|{hotspot_index}')
+                selected_logical.extend(rng.sample(hotspot, quota))
+            physical_refs = [
+                ref for logical in selected_logical for ref in logical['refs']
+            ]
+            removed_copies = self._tmc_density_remove_refs(physical_refs)
+            removed_logical = len(selected_logical)
+            self._tmc_density_dirty = (
+                self._tmc_density_dirty or bool(removed_copies))
             self._refresh_tmc_density()
-            self.status_var.set(f'TMC density reduced: {category}, -{removed} instances.')
+            self.status_var.set(
+                f'TMC hotspot density reduced: {category}, '
+                f'-{removed_logical} logical objects / '
+                f'-{removed_copies} XML copies in {len(hotspots)} hotspots.')
         except ValueError as exc:
             messagebox.showerror('Change Density (tmc)', str(exc), parent=self._tmc_density_window)
 
@@ -3132,18 +3310,24 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         thread = getattr(self, '_tmc_density_save_thread', None)
         if thread is not None and thread.is_alive():
             return
-        refs = list(self._tmc_density_groups.get(category, ()))
-        if not refs:
+        logical_instances = list(self._tmc_density_groups.get(category, ()))
+        if not logical_instances:
             return
+        physical_refs = [
+            ref for logical in logical_instances for ref in logical['refs']
+        ]
         if not messagebox.askyesno(
             'Delete TMC objects',
-            f'Delete all {len(refs)} instances of "{category}" from the TMC working copy?',
+            f'Delete all {len(logical_instances)} logical instances of "{category}"?\n\n'
+            f'This also deletes all {len(physical_refs)} matching LOD/XML copies.',
             parent=self._tmc_density_window, default='no', icon='warning'):
             return
-        removed = self._tmc_density_remove_refs(refs)
-        self._tmc_density_dirty = self._tmc_density_dirty or bool(removed)
+        removed_copies = self._tmc_density_remove_refs(physical_refs)
+        self._tmc_density_dirty = self._tmc_density_dirty or bool(removed_copies)
         self._refresh_tmc_density()
-        self.status_var.set(f'TMC category deleted: {category}, {removed} instances.')
+        self.status_var.set(
+            f'TMC category deleted: {category}, '
+            f'{len(logical_instances)} logical objects / {removed_copies} XML copies.')
 
     def _confirm_tmc_density_reset(self):
         thread = getattr(self, '_tmc_density_save_thread', None)
@@ -3322,7 +3506,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         if owner is None or not owner.winfo_exists():
             owner = self
         built = PopupTemplate.create_window(owner,
-            title='Change Density', heading='Change Density', close_command=self._object_density_close)
+            title='Change Density (rd3d)', heading='Change Density (rd3d)', close_command=self._object_density_close)
         self._density_window = window = built['window']
         window.transient(owner)
         PopupTemplate.apply_native_titlebar_controls(window)
