@@ -14,13 +14,15 @@ from app.config.config_slot import (
     RIVER_GUID_ROLE,
     SINGLE_SLOT_GUIDS,
     NATIVE_DEPOSIT_SLOT_NAMES,
+    MINE_WORKAREA_GUID, MINE_SLOT_GUIDS,
+    MINE_WORKAREA_GROUP, MINE_PRIMARY_GROUP,
+    MINE_MIN_DISTANCE, MINE_MAX_DISTANCE,
     SLOT_DEFINITIONS,
     TEMPLATE_METADATA,
     template_element,
     river_pair,
 )
 
-MINE_SLOT_GUIDS = {"1000029", "614", "116037"}
 
 from app.functions.function_place_object import world_from_click
 from app.functions.function_slot_validation import validate_slot_trees
@@ -477,6 +479,7 @@ class IslandSlotEditingMixin:
         self._island_slot_ram_game_tree = None
         self._island_slot_ram_map_tree = None
         self._island_slot_generated_deposit_ids = set()
+        self._mine_placement = None
 
     def _island_slot_bind(self, canvas):
         """Compatibility hook; mouse bindings are owned by MapViewTemplate."""
@@ -502,6 +505,7 @@ class IslandSlotEditingMixin:
         self.island_slot_selection_rect = None
         self.island_slot_selection_world_bounds = None
         self._island_slot_snapshot = None
+        self._island_slot_cancel_mine_placement()
 
     def _island_slot_world(self, event):
         canvas = self.slot_map_canvas
@@ -583,14 +587,8 @@ class IslandSlotEditingMixin:
 # old riverslot end
         for mine_name, mine_guid in MINE_SLOT_VARIANTS:
             slot_entries.append({
-                "kind": "cascade", "label": mine_name,
-                "entries": [
-                    {
-                        "label": label,
-                        "command": lambda d=degrees, n=mine_name, g=mine_guid, e=event: self._island_slot_add_mineslot_at_event(e, n, g, d),
-                    }
-                    for label, degrees in MINE_MENU_ORIENTATIONS.items()
-                ],
+                "label": mine_name,
+                "command": lambda n=mine_name, g=mine_guid, e=event: self._island_slot_add_mineslot_at_event(e, n, g),
             })
         entries.append({"kind": "cascade", "label": "Add Slot", "entries": slot_entries})
         custom_entries = [
@@ -664,8 +662,9 @@ class IslandSlotEditingMixin:
         self._refresh_open_slot_map()
 
     def _island_slot_right_click(self, event):
-        # This callback is bound only to ButtonPress-3. Keep the handler independent
-        # from platform-specific modifier/state masks so the menu always opens.
+        if self._mine_placement is not None:
+            self._island_slot_cancel_mine_placement()
+            return "break"
         self._island_slot_popup_menu(event, self._island_slot_nearest(event))
         return "break"
 
@@ -811,10 +810,217 @@ class IslandSlotEditingMixin:
             event, "Riverslot", "117741", degrees
         )
 
-    def _island_slot_add_mineslot_at_event(self, event, display_name, guid, degrees):
-        self._island_slot_add_directional_template_at_event(
-            event, display_name, guid, degrees
+    def _island_slot_add_mineslot_at_event(self, event, display_name, guid):
+        """Start two-click mine placement; do not change XML yet."""
+        self._island_slot_cancel_mine_placement(silent=True)
+        x, z = self._island_slot_world(event)
+        x, z = math.floor(x) + 0.5, math.floor(z) + 0.5
+        samples, source = self._island_slot_height_samples()
+        y = estimate_nearby_height(x, z, samples)
+        if y is None or y <= 0:
+            messagebox.showerror(
+                "Add Mine Slot", "Mine entrance must be placed on emerged terrain.",
+                parent=self.slot_map_window)
+            return
+        self._mine_placement = {
+            "name": display_name, "guid": str(guid),
+            "entrance": (x, y, z), "samples": samples, "source": source,
+        }
+        self.slot_map_allow_dot_movement_var.set(False)
+        self._slot_map_dot_movement_changed()
+        self.slot_map_canvas.focus_set()
+        self.status_var.set(
+            f"Mine entrance selected at X/Z {x:g} / {z:g}. "
+            "Left-click to place the Work Area; right-click or Esc to cancel.")
+        self._island_slot_draw_mine_preview(None)
+
+    def _island_slot_cancel_mine_placement(self, _event=None, silent=False):
+        active = getattr(self, "_mine_placement", None) is not None
+        self._mine_placement = None
+        canvas = getattr(self, "slot_map_canvas", None)
+        if canvas is not None:
+            try: canvas.delete("mine_placement_preview")
+            except tk.TclError: pass
+        if active and not silent:
+            self.status_var.set("Mine placement cancelled. No XML data was changed.")
+        return "break" if _event is not None else None
+
+    def _island_slot_draw_mine_preview(self, event):
+        placement = getattr(self, "_mine_placement", None)
+        canvas = getattr(self, "slot_map_canvas", None)
+        if placement is None or canvas is None:
+            return False
+        canvas.delete("mine_placement_preview")
+        ex, _ey, ez = placement["entrance"]
+        if event is None:
+            wx, wz = ex, ez
+        else:
+            wx, wz = self._island_slot_world(event)
+        width, height = max(canvas.winfo_width(), 200), max(canvas.winfo_height(), 200)
+        min_x, max_x, min_z, max_z = self.slot_map_bounds
+        span_x, span_z = max_x - min_x, max_z - min_z
+        margin = MapViewTemplate.MAP_MARGIN
+        scale = min((width - 2 * margin) / span_x, (height - 2 * margin) / span_z)
+        image_w = span_x * scale * self.slot_map_shared_zoom
+        image_h = span_z * scale * self.slot_map_shared_zoom
+        image_x = (width - image_w) / 2 + self.slot_map_shared_pan_x
+        image_y = (height - image_h) / 2 + self.slot_map_shared_pan_y
+        def screen(world_x, world_z):
+            return (
+                image_x + ((world_x - min_x) / span_x) * image_w,
+                image_y + ((max_z - world_z) / span_z) * image_h,
+            )
+        sx, sy = screen(ex, ez)
+        tx, ty = screen(wx, wz)
+        distance = math.hypot(wx - ex, wz - ez)
+        valid = MINE_MIN_DISTANCE <= distance <= MINE_MAX_DISTANCE
+        color = "#39D98A" if valid else "#FF5C5C"
+        canvas.create_line(sx, sy, tx, ty, fill=color, width=2,
+                           dash=(6, 4), tags=("mine_placement_preview",))
+        for px, py, radius in ((sx, sy, 6), (tx, ty, 5)):
+            canvas.create_oval(px-radius, py-radius, px+radius, py+radius,
+                               fill=color, outline="#111111", width=1,
+                               tags=("mine_placement_preview",))
+        canvas.create_text((sx+tx)/2, (sy+ty)/2-10,
+                           text=f"{distance:.1f}", fill=color,
+                           tags=("mine_placement_preview",))
+        canvas.tag_raise("mine_placement_preview")
+        return True
+
+    def _island_slot_mine_motion(self, event):
+        if self._mine_placement is None:
+            return False
+        self._island_slot_draw_mine_preview(event)
+        return True
+
+    def _island_slot_mine_left_click(self, event):
+        placement = getattr(self, "_mine_placement", None)
+        if placement is None:
+            return False
+        wx, wz = self._island_slot_world(event)
+        entrance = placement["entrance"]
+        distance = math.hypot(wx - entrance[0], wz - entrance[2])
+        if not MINE_MIN_DISTANCE <= distance <= MINE_MAX_DISTANCE:
+            messagebox.showerror(
+                "Add Mine Slot",
+                f"Work Area distance must be between {MINE_MIN_DISTANCE:g} and {MINE_MAX_DISTANCE:g}.",
+                parent=self.slot_map_window)
+            return True
+        wy = estimate_nearby_height(wx, wz, placement["samples"])
+        if wy is None or wy <= 0:
+            messagebox.showerror(
+                "Add Mine Slot", "Work Area must be placed on emerged terrain.",
+                parent=self.slot_map_window)
+            return True
+        status = StatusWindowTemplate.create(
+            self.slot_map_window,
+            text=f"Adding: {placement['name']}\nCreating Mine and Work Area...",
+            title="Add Mine Slot", heading="Add Mine Slot",
+            progress=True, fraction=0, modal=True, topmost=True)
+        self._slot_add_status_paint(status)
+        try:
+            self._island_slot_commit_mine_pair(
+                placement, entrance, (wx, wy, wz), status)
+            self._island_slot_cancel_mine_placement(silent=True)
+        except (OSError, ET.ParseError, UnicodeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Add Mine Slot", str(exc), parent=self.slot_map_window)
+        finally:
+            StatusWindowTemplate.close(status)
+        return True
+
+    def _island_slot_commit_mine_pair(self, placement, entrance, mountain, status):
+        """Atomically generate Mine, Work Area and a nine-point terrain path."""
+        go, mo, gp, mp = self._island_slot_sources()
+        if self._island_slot_ram_game_tree is None or self._island_slot_ram_map_tree is None:
+            self._island_slot_ram_game_tree = self._slot_parse_xml(gp if gp.is_file() else go)[0]
+            self._island_slot_ram_map_tree = self._slot_parse_xml(mp if mp.is_file() else mo)[0]
+        game_tree, map_tree = deepcopy(self._island_slot_ram_game_tree), deepcopy(self._island_slot_ram_map_tree)
+        game_root, map_root = game_tree.getroot(), map_tree.getroot()
+        records = object_records(game_root); container = game_object_container(game_root)
+        mine_source = next((r for r in records if r["guid"] == placement["guid"]), None)
+        mine = deepcopy(mine_source["node"] if mine_source else template_element("clay slot"))
+        work_source = next((r for r in records if r["guid"] == MINE_WORKAREA_GUID), None)
+        workarea = deepcopy(work_source["node"] if work_source else template_element("Riverslot_workarea"))
+        used = all_ids(map_root, game_root)
+        mine_id = allocate_verified_unique_id(map_root, game_root, used)
+        work_id = allocate_verified_unique_id(map_root, game_root, used)
+        folder = new_folder_id(records)
+        for node, oid, guid, position in ((mine,mine_id,placement["guid"],entrance),(workarea,work_id,MINE_WORKAREA_GUID,mountain)):
+            set_text(node,"ID",oid); set_text(node,"Position",format_position(position))
+            guid_node=direct(node,"guid"); guid_node.text=guid
+            folder_node=direct(node,"ObjectFolderID")
+            if folder_node is None:
+                folder_node=ET.Element("ObjectFolderID"); node.insert(2,folder_node)
+            folder_node.text=folder
+        direction = math.atan2(
+            mountain[0] - entrance[0],
+            mountain[2] - entrance[2],
         )
+        # MineSlot 1000029 has a mirrored Z-facing axis: horizontal placement
+        # already points correctly, while vertical placement is reversed. Mirror
+        # only the Z delta instead of applying another constant rotation.
+        mine_direction = direction
+        if placement["guid"] == "1000029":
+            delta_x = mountain[0] - entrance[0]
+            delta_z = mountain[2] - entrance[2]
+            mine_direction = math.atan2(delta_x, -delta_z) % (2.0 * math.pi)
+        for node, node_direction in (
+            (mine, mine_direction),
+            (workarea, direction),
+        ):
+            dn = direct(node, "Direction")
+            if dn is None:
+                dn = ET.Element("Direction")
+                pos = direct(node, "Position")
+                node.insert(list(node).index(pos) + 1, dn)
+            dn.text = game_number(node_direction)
+
+        # Direction and the Slot Map arrow are already correct. Do not rotate
+        # the cloned quaternion relatively. Build the MineSlot yaw quaternion
+        # directly from that Direction. Native 1000029 uses yaw = -Direction
+        # (for example Direction +PI/2 corresponds to Orientation Y -0.7071).
+        if placement["guid"] == "1000029":
+            mesh = direct(mine, "Mesh")
+            orientation = direct(mesh, "Orientation") if mesh is not None else None
+            if orientation is None:
+                raise ValueError("MineSlot 1000029 template has no Mesh/Orientation.")
+            # Runtime facing swaps the map's X/Z angle basis. Convert the
+            # already-correct Mine -> Work Area direction by reflecting the angle
+            # across the X/Z diagonal: up->up, right->right, left->left, down->down.
+            orientation_direction = math.pi / 2.0 - direction
+            half_yaw = orientation_direction / 2.0
+            orientation.text = " ".join(game_number(value) for value in (
+                0.0,
+                -math.sin(half_yaw),
+                0.0,
+                math.cos(half_yaw),
+            ))
+
+        curve=next((n for n in workarea.iter() if tag(n)=="BezierCurve"),None)
+        if curve is None: raise ValueError("Work Area template has no BezierCurve.")
+        for child in list(curve): curve.remove(child)
+        points=[]
+        for index in range(9):
+            f=index/8; x=mountain[0]+(entrance[0]-mountain[0])*f; z=mountain[2]+(entrance[2]-mountain[2])*f
+            y=estimate_nearby_height(x,z,placement["samples"])
+            if y is None or y <= 0: raise ValueError("Mine path crosses invalid or underwater terrain.")
+            points.append((x,y,z))
+        for index,point in enumerate(points):
+            a=points[max(0,index-1)]; b=points[min(8,index+1)]; tangent=tuple((b[i]-a[i])/6 for i in range(3))
+            item=ET.SubElement(curve,"None"); ET.SubElement(item,"p").text=format_position(point)
+            ET.SubElement(item,"i").text=format_position(tuple(-v for v in tangent)); ET.SubElement(item,"o").text=format_position(tangent)
+        path=curve.getparent(); minimum=direct(path,"Minimum"); maximum=direct(path,"Maximum")
+        minimum.text=format_position(tuple(min(p[i] for p in points) for i in range(3)))
+        maximum.text=format_position(tuple(max(p[i] for p in points) for i in range(3)))
+        StatusWindowTemplate.update(status,fraction=.7)
+        append_pretty(container,mine); append_pretty(container,workarea)
+        append_map_entry(map_root,MINE_PRIMARY_GROUP,mine_id,placement["guid"],format_position(entrance))
+        append_map_entry(map_root,MINE_WORKAREA_GROUP,work_id,MINE_WORKAREA_GUID,format_position(mountain))
+        validate_pair(map_root,game_root)
+        self._island_slot_ram_game_tree,self._island_slot_ram_map_tree=game_tree,map_tree
+        StatusWindowTemplate.update(status,fraction=1)
+        self.status_var.set(f"Added {placement['name']} with Work Area | IDs: {mine_id}, {work_id} | Folder: {folder}")
+        self._refresh_open_slot_map()
 
     def _island_slot_distribution_positions(
             self, click_x, click_z, amount, spacing=SLOT_MULTI_INSERT_SPACING):
@@ -1937,6 +2143,8 @@ class IslandSlotEditingMixin:
             self.status_var.set("Slot configuration reloaded from the _original XML files.")
 
     def _island_slot_selection_clear(self, _event=None):
+        if getattr(self, "_mine_placement", None) is not None:
+            return self._island_slot_cancel_mine_placement(_event)
         self.island_slot_selection_start = None
         self.island_slot_lasso_points = []
         self.island_slot_lasso_world_points = []

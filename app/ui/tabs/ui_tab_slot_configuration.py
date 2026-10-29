@@ -17,7 +17,12 @@ from app.templates.template_popup import PopupTemplate
 from app.templates.template_statuswindow import StatusWindowTemplate
 from app.templates.template_treeview import TreeviewTemplate
 from app.config.config_colors import TYPE_CATEGORY_COLOR_FAMILIES, TYPE_CATEGORY_COLORS, DEFAULT_TYPE_COLOR
-from app.config.config_slot import RIVER_GUID_FAMILIES, RIVER_GUID_ROLE
+from app.config.config_slot import (
+    RIVER_GUID_FAMILIES,
+    RIVER_GUID_ROLE,
+    MINE_SLOT_GUIDS,
+    MINE_WORKAREA_GUID,
+)
 from app.functions.function_island_slots import (
     IslandSlotEditingMixin,
     estimate_nearby_height,
@@ -464,9 +469,24 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                     if pair[0] in map_entries and pair[1] in map_entries:
                         river_pairs.append(pair)
                         paired_ids.update(pair[:2])
+        # Mine and Work Area use the same non-empty ObjectFolderID. Treat the
+        # pair exactly like a connected River pair for map rendering, so the
+        # helper arrow is derived from actual positions, never angle offsets.
+        mine_primaries = [record for record in game_records if record["guid"] in MINE_SLOT_GUIDS]
+        mine_workareas = [record for record in game_records if record["guid"] == MINE_WORKAREA_GUID]
+        for primary in mine_primaries:
+            matches = [
+                work for work in mine_workareas
+                if primary["folder"] and work["folder"] == primary["folder"]
+            ]
+            if len(matches) == 1:
+                pair = (primary["id"], matches[0]["id"], "mine")
+                if pair[0] in map_entries and pair[1] in map_entries:
+                    river_pairs.append(pair)
+                    paired_ids.update(pair[:2])
         self.slot_map_river_pairs = river_pairs
 
-        # Single-point River and Mine slots use the scalar Direction field.
+        # Single-point River and legacy unpaired Mine slots use Direction.
         # Keep it by ObjectId so the Slot Map can render a facing arrow without
         # changing the existing point tuple.
         orientation_directions = {}
@@ -691,6 +711,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             except (ValueError, tk.TclError): pass
         if window is not None and window.winfo_exists():
             PopupTemplate.close_window(window)
+        self._island_slot_cancel_mine_placement(silent=True)
         self.slot_map_window = self.slot_map_canvas = self.slot_map_legend = None
         self.slot_map_after_id = None
         self.slot_map_image_tk = None
@@ -885,7 +906,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             px, py, oid, guid = point[:4]
             if guid not in virtual_orientation_guids:
                 continue
-            if guid == "117741" and oid in paired_primary_ids:
+            if oid in paired_primary_ids:
                 continue
             direction = getattr(self, "slot_map_orientation_directions", {}).get(oid)
             if direction is None:
@@ -898,10 +919,6 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             dir_x = math.cos(menu_angle)
             # World +Z maps upward, therefore its canvas delta is negative Y.
             dir_y = -math.sin(menu_angle)
-            if guid in {"1000029", "614", "116037"}:
-                # MineSlot visual only: rotate the displayed canvas arrow 90 deg CCW.
-                # RiverSlot 117741 is deliberately untouched.
-                dir_x, dir_y = dir_y, -dir_x
             virtual_workarea_x = px + dir_x * orientation_line_length
             virtual_workarea_y = py + dir_y * orientation_line_length
             line_color = self.slot_map_guid_colors.get(guid, "#c68a52")
@@ -976,6 +993,8 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         MapViewTemplate.update_dot_movement_undo(self.slot_map_canvas, enabled)
 
     def _slot_map_motion(self, event):
+        if self._island_slot_mine_motion(event):
+            return "break"
         MapViewTemplate.set_dot_movement_cursor(
             self.slot_map_canvas, bool(self.slot_map_allow_dot_movement_var.get()), event,
         )
@@ -996,6 +1015,8 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             MapViewTemplate.position_hover_marker(self.slot_map_canvas, self.slot_map_hover_item, None)
 
     def _slot_map_drag_start(self, event):
+        if self._island_slot_mine_left_click(event):
+            return "break"
         return MapViewTemplate.dot_drag_start(
             event,
             self.slot_map_canvas,
