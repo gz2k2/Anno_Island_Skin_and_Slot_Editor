@@ -905,6 +905,10 @@ class IslandSlotBaseMixin:
             wx, wz = ex, ez
         else:
             wx, wz = self._island_slot_world(event)
+            if placement.get("kind") == "river":
+                wx, wz = math.floor(wx) + 0.5, math.floor(wz) + 0.5
+                wx, wz = self._island_slot_snap_river_target(
+                    placement["entrance"], wx, wz)
         width, height = max(canvas.winfo_width(), 200), max(canvas.winfo_height(), 200)
         min_x, max_x, min_z, max_z = self.slot_map_bounds
         span_x, span_z = max_x - min_x, max_z - min_z
@@ -949,8 +953,10 @@ class IslandSlotBaseMixin:
         wx, wz = self._island_slot_world(event)
         wx, wz = math.floor(wx) + 0.5, math.floor(wz) + 0.5
         entrance = placement["entrance"]
-        distance = math.hypot(wx - entrance[0], wz - entrance[2])
         is_river = placement.get("kind") == "river"
+        if is_river:
+            wx, wz = self._island_slot_snap_river_target(entrance, wx, wz)
+        distance = math.hypot(wx - entrance[0], wz - entrance[2])
         minimum = self.RIVER_MIN_DISTANCE if is_river else self.MINE_MIN_DISTANCE
         maximum = self.RIVER_MAX_DISTANCE if is_river else self.MINE_MAX_DISTANCE
         title = "Add RiverSlot" if is_river else "Add Mine Slot"

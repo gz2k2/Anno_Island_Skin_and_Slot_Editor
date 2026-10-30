@@ -11,6 +11,22 @@ class RiverSlotEditingMixin:
     # Additive Y correction in world-height units. Applied equally to RiverSlot,
     # Work Area, MapName positions and every transformed Bezier point.
     RIVER_HEIGHT_OFFSET = 0.5
+
+    @staticmethod
+    def _island_slot_snap_river_target(entrance, target_x, target_z):
+        """Snap the second RiverSlot point to the nearest 90-degree world axis.
+
+        The dominant cursor delta chooses horizontal or vertical placement. The
+        target remains on the existing half-cell grid because the unchanged
+        coordinate comes from the already snapped entrance.
+        """
+        entrance_x, _entrance_y, entrance_z = entrance
+        delta_x = target_x - entrance_x
+        delta_z = target_z - entrance_z
+        if abs(delta_x) >= abs(delta_z):
+            return target_x, entrance_z
+        return entrance_x, target_z
+
     def _island_slot_add_riverslot_at_event(self, event):
         """Start native 117741/117742 two-click placement."""
         self._island_slot_cancel_mine_placement(silent=True)
