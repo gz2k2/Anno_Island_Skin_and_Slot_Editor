@@ -14,12 +14,12 @@ from app.config.config_slot import (
     RIVER_GUID_ROLE,
     SINGLE_SLOT_GUIDS,
     NATIVE_DEPOSIT_SLOT_NAMES,
-    MINE_MASTER_GUID, MINE_WORKAREA_GUID, MINE_SLOT_GUIDS,
-    MINE_WORKAREA_GROUP, MINE_PRIMARY_GROUP,
+    MINE_MASTER_GUID, MINE_WORKAREA_GUID, MINE_CAVE_GUID, MINE_SLOT_GUIDS,
+    MINE_WORKAREA_GROUP, MINE_PRIMARY_GROUP, MINE_CAVE_GROUP,
     MINE_MIN_DISTANCE, MINE_MAX_DISTANCE,
     SLOT_DEFINITIONS,
     TEMPLATE_METADATA,
-    MINE_TEMPLATE_NAME, MINE_WORKAREA_TEMPLATE_NAME,
+    MINE_TEMPLATE_NAME, MINE_WORKAREA_TEMPLATE_NAME, MINE_CAVE_TEMPLATE_NAME,
     template_element,
     river_pair,
 )
@@ -194,6 +194,35 @@ def allocate_verified_unique_id(map_root, game_root, used):
         if not in_map and not in_game:
             return candidate
     raise RuntimeError("Could not allocate a verified unique signed 64-bit object ID.")
+
+
+def allocate_verified_id_family(map_root, game_root, used, size):
+    """Allocate one recognizable consecutive negative ObjectId family.
+
+    The family anchor is aligned to 100, so related records are immediately
+    visible in XML. Every member is checked as a complete block against both
+    Gamedata and MapName before any ID is reserved or returned.
+    """
+    size = int(size)
+    if size < 1 or size > 100:
+        raise ValueError("ObjectId family size must be between 1 and 100.")
+    map_ids = {
+        (node.text or "").strip()
+        for node in map_root.iter()
+        if tag(node) == "ObjectId" and (node.text or "").strip()
+    }
+    game_ids = {record["id"] for record in object_records(game_root)}
+    occupied = set(used) | map_ids | game_ids
+    # Keep enough distance from zero and signed-64 boundaries. Aligning the
+    # negative anchor to 100 produces e.g. ...2700, ...2699 for a two-ID pair.
+    maximum_anchor = ((1 << 63) - 1) // 100
+    for _ in range(10000):
+        anchor = -(secrets.randbelow(maximum_anchor - 1) + 1) * 100
+        family = tuple(str(anchor + offset) for offset in range(size))
+        if all(candidate not in occupied for candidate in family):
+            used.update(family)
+            return family
+    raise RuntimeError("Could not allocate a verified consecutive ObjectId family.")
 
 
 def new_folder_id(records):
@@ -466,6 +495,49 @@ def validate_pair(map_root, game_root):
     report = validate_slot_trees(map_root, game_root)
     report.require_ok()
     return report.warnings
+
+
+def mine_object_groups(root):
+    """Return the native ObjectGroupCollection/ObjectGroups container."""
+    for collection in root.iter():
+        if tag(collection) != "ObjectGroupCollection":
+            continue
+        groups = direct(collection, "ObjectGroups")
+        if groups is not None:
+            return groups
+    raise ValueError("Gamedata XML has no ObjectGroupCollection/ObjectGroups container.")
+
+
+def next_mining_group_name(groups):
+    """Return the next unused native Miningslot<number> group name."""
+    used = set()
+    for child in groups:
+        if direct(child, "GameObjects") is not None:
+            continue
+        value = (child.text or "").strip()
+        normalized = value.casefold().replace(" ", "")
+        if normalized.startswith("miningslot"):
+            suffix = normalized[len("miningslot"):]
+            if suffix.isdigit():
+                used.add(int(suffix))
+    number = 1
+    while number in used:
+        number += 1
+    return f"Miningslot{number}"
+
+
+def append_mine_object_group(game_root, work_id, mine_id, cave_id):
+    """Append native name/group siblings in Work Area, Mine, Cave order."""
+    groups = mine_object_groups(game_root)
+    name = ET.Element("None")
+    name.text = next_mining_group_name(groups)
+    append_pretty(groups, name)
+    group = ET.Element("None")
+    members = ET.SubElement(group, "GameObjects")
+    for object_id in (work_id, mine_id, cave_id):
+        ET.SubElement(members, "None").text = object_id
+    append_pretty(groups, group)
+    return name.text
 
 
 class IslandSlotEditingMixin:
@@ -952,9 +1024,13 @@ class IslandSlotEditingMixin:
         workarea = template_element(MINE_WORKAREA_TEMPLATE_NAME)
         if text(workarea, "guid") != MINE_WORKAREA_GUID:
             raise ValueError("MineSlot Work Area template GUID is not 1000253.")
+        cave = template_element(MINE_CAVE_TEMPLATE_NAME)
+        if text(cave, "guid") != MINE_CAVE_GUID:
+            raise ValueError("MineSlot Cave template GUID is not 100419.")
         used = all_ids(map_root, game_root)
-        mine_id = allocate_verified_unique_id(map_root, game_root, used)
-        work_id = allocate_verified_unique_id(map_root, game_root, used)
+        # Work Area, Mine and Cave are one native logical family.
+        mine_id, work_id, cave_id = allocate_verified_id_family(
+            map_root, game_root, used, 3)
         folder = new_folder_id(records)
         for node, oid, guid, position in ((mine,mine_id,target_guid,entrance),(workarea,work_id,MINE_WORKAREA_GUID,mountain)):
             set_text(node,"ID",oid); set_text(node,"Position",format_position(position))
@@ -963,6 +1039,25 @@ class IslandSlotEditingMixin:
             if folder_node is None:
                 folder_node=ET.Element("ObjectFolderID"); node.insert(2,folder_node)
             folder_node.text=folder
+        # Transform the complete native Cave template from its original Mine
+        # anchor to the new entrance. This preserves the original five-point Cave
+        # path, quaternion and all native fields while adapting world geometry.
+        original_master_position = parse_position(text(template_element(MINE_TEMPLATE_NAME), "Position"))
+        original_master_direction = math.pi
+        set_text(cave, "ID", cave_id)
+        set_text(cave, "ObjectFolderID", folder)
+        target_cave_rotation = (-math.atan2(
+            mountain[0] - entrance[0], mountain[2] - entrance[2]
+        ) + math.pi / 2.0) % (2.0 * math.pi)
+        rotation_delta = math.degrees(target_cave_rotation - original_master_direction)
+        rotate_clone_y(cave, original_master_position, rotation_delta)
+        dx = entrance[0] - original_master_position[0]
+        dz = entrance[2] - original_master_position[2]
+        relocate_clone(
+            cave, dx, dz,
+            lambda x, z: estimate_nearby_height(x, z, placement["samples"]),
+        )
+
         direction = math.atan2(
             mountain[0] - entrance[0],
             mountain[2] - entrance[2],
@@ -1021,9 +1116,11 @@ class IslandSlotEditingMixin:
         minimum.text=format_position(tuple(min(p[i] for p in points) for i in range(3)))
         maximum.text=format_position(tuple(max(p[i] for p in points) for i in range(3)))
         StatusWindowTemplate.update(status,fraction=.7)
-        append_pretty(container,mine); append_pretty(container,workarea)
+        append_pretty(container,mine); append_pretty(container,workarea); append_pretty(container,cave)
         append_map_entry(map_root,MINE_PRIMARY_GROUP,mine_id,target_guid,format_position(entrance))
         append_map_entry(map_root,MINE_WORKAREA_GROUP,work_id,MINE_WORKAREA_GUID,format_position(mountain))
+        append_map_entry(map_root,MINE_CAVE_GROUP,cave_id,MINE_CAVE_GUID,text(cave, "Position"))
+        group_name = append_mine_object_group(game_root, work_id, mine_id, cave_id)
         validate_pair(map_root,game_root)
         self._island_slot_ram_game_tree,self._island_slot_ram_map_tree=game_tree,map_tree
         StatusWindowTemplate.update(status,fraction=1)
