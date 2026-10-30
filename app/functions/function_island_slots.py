@@ -69,6 +69,14 @@ MINE_SLOT_VARIANTS = (
 
 SLOT_MULTI_INSERT_SPACING = 8.0
 
+# Position of Cave GUID 100419 along the MineSlot -> Work Area segment.
+# 0.0 = MineSlot, 0.25 = 25 percent, 0.5 = midpoint, 1.0 = Work Area.
+MINE_CAVE_DISTANCE_FRACTION = 0.25
+
+# Y-height multiplier for Cave GUID 100419.
+# 1.0 = unchanged, 1.5 = 50 percent higher, 0.8 = 20 percent lower.
+MINE_CAVE_HEIGHT_MULTIPLIER = 1.0
+
 
 def tag(node):
     return node.tag.rsplit("}", 1)[-1] if isinstance(node.tag, str) else ""
@@ -497,29 +505,34 @@ def validate_pair(map_root, game_root):
     return report.warnings
 
 
-def mine_object_groups(root):
-    """Return the native ObjectGroupCollection/ObjectGroups container."""
+def mine_object_group_containers(root):
+    """Return every parallel ObjectGroupCollection/ObjectGroups container."""
+    containers = []
     for collection in root.iter():
         if tag(collection) != "ObjectGroupCollection":
             continue
         groups = direct(collection, "ObjectGroups")
         if groups is not None:
-            return groups
-    raise ValueError("Gamedata XML has no ObjectGroupCollection/ObjectGroups container.")
+            containers.append(groups)
+    if not containers:
+        raise ValueError(
+            "Gamedata XML has no ObjectGroupCollection/ObjectGroups container.")
+    return containers
 
 
-def next_mining_group_name(groups):
-    """Return the next unused native Miningslot<number> group name."""
+def next_mining_group_name(containers):
+    """Return one globally free native Miningslot<number> group name."""
     used = set()
-    for child in groups:
-        if direct(child, "GameObjects") is not None:
-            continue
-        value = (child.text or "").strip()
-        normalized = value.casefold().replace(" ", "")
-        if normalized.startswith("miningslot"):
-            suffix = normalized[len("miningslot"):]
-            if suffix.isdigit():
-                used.add(int(suffix))
+    for groups in containers:
+        for child in groups:
+            if direct(child, "GameObjects") is not None:
+                continue
+            value = (child.text or "").strip()
+            normalized = value.casefold().replace(" ", "")
+            if normalized.startswith("miningslot"):
+                suffix = normalized[len("miningslot"):]
+                if suffix.isdigit():
+                    used.add(int(suffix))
     number = 1
     while number in used:
         number += 1
@@ -527,17 +540,32 @@ def next_mining_group_name(groups):
 
 
 def append_mine_object_group(game_root, work_id, mine_id, cave_id):
-    """Append native name/group siblings in Work Area, Mine, Cave order."""
-    groups = mine_object_groups(game_root)
-    name = ET.Element("None")
-    name.text = next_mining_group_name(groups)
-    append_pretty(groups, name)
-    group = ET.Element("None")
-    members = ET.SubElement(group, "GameObjects")
-    for object_id in (work_id, mine_id, cave_id):
-        ET.SubElement(members, "None").text = object_id
-    append_pretty(groups, group)
-    return name.text
+    """Append an identical native mine group to every parallel container."""
+    containers = mine_object_group_containers(game_root)
+    group_name = next_mining_group_name(containers)
+    member_ids = (work_id, mine_id, cave_id)
+    for groups in containers:
+        name = ET.Element("None")
+        name.text = group_name
+        append_pretty(groups, name)
+        group = ET.Element("None")
+        members = ET.SubElement(group, "GameObjects")
+        for object_id in member_ids:
+            ET.SubElement(members, "None").text = object_id
+        append_pretty(groups, group)
+    # Verify all parallel copies immediately, before the staged XML is committed.
+    copies = []
+    for groups in containers:
+        children = list(groups)
+        for index, child in enumerate(children[:-1]):
+            if (child.text or "").strip() != group_name:
+                continue
+            game_objects = direct(children[index + 1], "GameObjects")
+            if game_objects is not None:
+                copies.append(tuple((node.text or "").strip() for node in game_objects))
+    if len(copies) != len(containers) or any(copy != member_ids for copy in copies):
+        raise ValueError("Mine ObjectGroup copies are not synchronized.")
+    return group_name
 
 
 class IslandSlotEditingMixin:
@@ -1039,24 +1067,36 @@ class IslandSlotEditingMixin:
             if folder_node is None:
                 folder_node=ET.Element("ObjectFolderID"); node.insert(2,folder_node)
             folder_node.text=folder
-        # Transform the complete native Cave template from its original Mine
-        # anchor to the new entrance. This preserves the original five-point Cave
-        # path, quaternion and all native fields while adapting world geometry.
-        original_master_position = parse_position(text(template_element(MINE_TEMPLATE_NAME), "Position"))
+        # Place Cave 100419 exactly halfway between MineSlot and Work Area.
+        # Preserve the complete native five-point Cave path and rotate/translate
+        # that geometry around the Cave template's own anchor to the midpoint.
+        original_cave_position = parse_position(text(cave, "Position"))
         original_master_direction = math.pi
+        midpoint_x = (entrance[0] + mountain[0]) / 2.0
+        midpoint_z = (entrance[2] + mountain[2]) / 2.0
+        midpoint_y = estimate_nearby_height(
+            midpoint_x, midpoint_z, placement["samples"])
+        if midpoint_y is None or midpoint_y <= 0:
+            midpoint_y = (entrance[1] + mountain[1]) / 2.0
+        midpoint_y *= MINE_CAVE_HEIGHT_MULTIPLIER
+        cave_midpoint = (midpoint_x, midpoint_y, midpoint_z)
         set_text(cave, "ID", cave_id)
         set_text(cave, "ObjectFolderID", folder)
         target_cave_rotation = (-math.atan2(
             mountain[0] - entrance[0], mountain[2] - entrance[2]
         ) + math.pi / 2.0) % (2.0 * math.pi)
-        rotation_delta = math.degrees(target_cave_rotation - original_master_direction)
-        rotate_clone_y(cave, original_master_position, rotation_delta)
-        dx = entrance[0] - original_master_position[0]
-        dz = entrance[2] - original_master_position[2]
+        rotation_delta = math.degrees(
+            target_cave_rotation - original_master_direction)
+        rotate_clone_y(cave, original_cave_position, rotation_delta)
+        dx = cave_midpoint[0] - original_cave_position[0]
+        dz = cave_midpoint[2] - original_cave_position[2]
         relocate_clone(
             cave, dx, dz,
             lambda x, z: estimate_nearby_height(x, z, placement["samples"]),
         )
+        # relocate_clone follows terrain for every path point. Set the Cave's
+        # object anchor explicitly to the exact requested midpoint afterwards.
+        set_text(cave, "Position", format_position(cave_midpoint))
 
         direction = math.atan2(
             mountain[0] - entrance[0],
