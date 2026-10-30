@@ -11,19 +11,11 @@ SLOT_LIBRARY_VERSION = 2
 
 RIVER_GUID_FAMILIES = {
     "native": {
-        "primary": "117741", "workarea": "1999002331",
-        "primary_group": "15", "workarea_group": "3",
+        "primary": "117741",
+        "workarea": "117742",
+        "primary_group": "4",
+        "workarea_group": "3",
         "folder_pairing": True,
-    },
-    "custom_a": {
-        "primary": "1999002330", "workarea": "1999002331",
-        "primary_group": "15", "workarea_group": "3",
-        "folder_pairing": False,
-    },
-    "custom_b": {
-        "primary": "1999002336", "workarea": "1999002337",
-        "primary_group": "15", "workarea_group": "3",
-        "folder_pairing": False,
     },
 }
 RIVER_GUID_ROLE = {
@@ -40,11 +32,11 @@ MINE_SLOT_GUIDS = frozenset((MINE_MASTER_GUID, "614", "116037"))
 MINE_WORKAREA_GROUP = "3"
 MINE_PRIMARY_GROUP = "1"
 MINE_MIN_DISTANCE = 2.0
-MINE_MAX_DISTANCE = 64.0
+MINE_MAX_DISTANCE = 20.0
 SINGLE_SLOT_GUIDS = {"100417", "100849", "113750"}
 RESOURCE_SLOT_NAMES = {"100417": "clay slot", "100849": "oil slot", "113750": "gas slot (arctic)"}
 SLOT_DEFINITIONS = {
-    "Riverslot": {"guid": "117741", "group": "15", "pair": "Riverslot_workarea", "pair_guid": "1999002331", "pair_group": "3"},
+    "Riverslot": {"guid": "117741", "group": "4", "pair": "Riverslot_workarea", "pair_guid": "117742", "pair_group": "3"},
     "clay slot": {"guid": "100417", "group": "1"},
     "oil slot": {"guid": "100849", "group": "1"},
     "gas slot (arctic)": {"guid": "113750", "group": "1"},
@@ -66,7 +58,7 @@ TEMPLATE_METADATA = {'clay slot': {'guid': '100417',
                'source': 'riverslots/colony02_m_04_gamedata.xml',
                'region': 'colony',
                'original_id': '-9209861233677697022'},
- 'Riverslot_workarea': {'guid': '1999002331',
+ 'Riverslot_workarea': {'guid': '117742',
                         'source': 'riverslots/colony02_m_04_gamedata.xml',
                         'region': 'colony',
                         'original_id': '-9209861233677697015'}}
@@ -239,7 +231,7 @@ TEMPLATE_XML = {'clay slot': '<None>\n'
               '                  </None>\n'
               '                  ',
  'Riverslot_workarea': '<None>\n'
-                       '                    <guid>1999002331</guid>\n'
+                       '                    <guid>117742</guid>\n'
                        '                    <ID>-9209861233677697015</ID>\n'
                        '                    <ObjectFolderID>2</ObjectFolderID>\n'
                        '                    <Position>167,5 1,9927818 166,5</Position>\n'

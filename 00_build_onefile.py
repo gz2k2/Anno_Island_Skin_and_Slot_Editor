@@ -43,6 +43,8 @@ HIDDEN_IMPORTS = (
     "app.functions.function_custom_content",
     "app.functions.function_density",
     "app.functions.function_island_slots",
+    "app.functions.function_mining_slots",
+    "app.functions.function_river_slots",
     "app.functions.function_map_export",
     "app.functions.function_map_selection",
     "app.functions.function_place_object",
