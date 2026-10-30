@@ -32,8 +32,9 @@ RIVER_GUID_ROLE = {
     for role, guid in (("primary", definition["primary"]),
                        ("workarea", definition["workarea"]))
 }
+MINE_MASTER_GUID = "1000029"
 MINE_WORKAREA_GUID = "1000253"
-MINE_SLOT_GUIDS = frozenset(("1000029", "614", "116037"))
+MINE_SLOT_GUIDS = frozenset((MINE_MASTER_GUID, "614", "116037"))
 MINE_WORKAREA_GROUP = "3"
 MINE_PRIMARY_GROUP = "1"
 MINE_MIN_DISTANCE = 2.0

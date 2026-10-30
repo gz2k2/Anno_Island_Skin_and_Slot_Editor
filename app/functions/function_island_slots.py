@@ -14,11 +14,12 @@ from app.config.config_slot import (
     RIVER_GUID_ROLE,
     SINGLE_SLOT_GUIDS,
     NATIVE_DEPOSIT_SLOT_NAMES,
-    MINE_WORKAREA_GUID, MINE_SLOT_GUIDS,
+    MINE_MASTER_GUID, MINE_WORKAREA_GUID, MINE_SLOT_GUIDS,
     MINE_WORKAREA_GROUP, MINE_PRIMARY_GROUP,
     MINE_MIN_DISTANCE, MINE_MAX_DISTANCE,
     SLOT_DEFINITIONS,
     TEMPLATE_METADATA,
+    MINE_TEMPLATE_NAME, MINE_WORKAREA_TEMPLATE_NAME,
     template_element,
     river_pair,
 )
@@ -937,15 +938,25 @@ class IslandSlotEditingMixin:
         game_tree, map_tree = deepcopy(self._island_slot_ram_game_tree), deepcopy(self._island_slot_ram_map_tree)
         game_root, map_root = game_tree.getroot(), map_tree.getroot()
         records = object_records(game_root); container = game_object_container(game_root)
-        mine_source = next((r for r in records if r["guid"] == placement["guid"]), None)
-        mine = deepcopy(mine_source["node"] if mine_source else template_element("clay slot"))
-        work_source = next((r for r in records if r["guid"] == MINE_WORKAREA_GUID), None)
-        workarea = deepcopy(work_source["node"] if work_source else template_element("Riverslot_workarea"))
+        target_guid = str(placement["guid"])
+        if target_guid not in MINE_SLOT_GUIDS:
+            raise ValueError(f"Unsupported MineSlot GUID: {target_guid}")
+        # Master logic: every variant starts as the verified native 1000029
+        # MineSlot. Only after the complete master object has been configured is
+        # its GUID changed to the selected target variant. This guarantees that
+        # 614 and 116037 inherit exactly the tested master structure, Direction
+        # and Mesh/Orientation instead of cloning unrelated island objects.
+        mine = template_element(MINE_TEMPLATE_NAME)
+        if text(mine, "guid") != MINE_MASTER_GUID:
+            raise ValueError("MineSlot master template GUID is not 1000029.")
+        workarea = template_element(MINE_WORKAREA_TEMPLATE_NAME)
+        if text(workarea, "guid") != MINE_WORKAREA_GUID:
+            raise ValueError("MineSlot Work Area template GUID is not 1000253.")
         used = all_ids(map_root, game_root)
         mine_id = allocate_verified_unique_id(map_root, game_root, used)
         work_id = allocate_verified_unique_id(map_root, game_root, used)
         folder = new_folder_id(records)
-        for node, oid, guid, position in ((mine,mine_id,placement["guid"],entrance),(workarea,work_id,MINE_WORKAREA_GUID,mountain)):
+        for node, oid, guid, position in ((mine,mine_id,target_guid,entrance),(workarea,work_id,MINE_WORKAREA_GUID,mountain)):
             set_text(node,"ID",oid); set_text(node,"Position",format_position(position))
             guid_node=direct(node,"guid"); guid_node.text=guid
             folder_node=direct(node,"ObjectFolderID")
@@ -956,12 +967,13 @@ class IslandSlotEditingMixin:
             mountain[0] - entrance[0],
             mountain[2] - entrance[2],
         )
-        # Mesh/Orientation controls the visible unbuilt mine graphic and is
-        # handled separately below. The constructed mine building uses Direction
-        # and has a native +90-degree asset-axis offset for GUID 1000029.
-        mine_direction = direction
-        if placement["guid"] == "1000029":
-            mine_direction = (direction + math.pi / 2.0) % (2.0 * math.pi)
+        # Mesh/Orientation controls the correctly aligned unbuilt mine graphic
+        # and is handled separately below. The constructed 1000029 building uses
+        # Direction with a +90-degree asset offset, but its horizontal X axis is
+        # mirrored: up/down are correct while left/right must be exchanged.
+        # All three variants are configured as 1000029 master objects before
+        # the GUID swap, so all three use the same verified master Direction.
+        mine_direction = (-direction + math.pi / 2.0) % (2.0 * math.pi)
         for node, node_direction in (
             (mine, mine_direction),
             (workarea, direction),
@@ -977,23 +989,21 @@ class IslandSlotEditingMixin:
         # the cloned quaternion relatively. Build the MineSlot yaw quaternion
         # directly from that Direction. Native 1000029 uses yaw = -Direction
         # (for example Direction +PI/2 corresponds to Orientation Y -0.7071).
-        if placement["guid"] == "1000029":
-            mesh = direct(mine, "Mesh")
-            orientation = direct(mesh, "Orientation") if mesh is not None else None
-            if orientation is None:
-                raise ValueError("MineSlot 1000029 template has no Mesh/Orientation.")
-            # Runtime facing swaps the map's X/Z angle basis. Convert the
-            # already-correct Mine -> Work Area direction by reflecting the angle
-            # across the X/Z diagonal: up->up, right->right, left->left, down->down.
-            orientation_direction = math.pi / 2.0 - direction
-            half_yaw = orientation_direction / 2.0
-            orientation.text = " ".join(game_number(value) for value in (
-                0.0,
-                -math.sin(half_yaw),
-                0.0,
-                math.cos(half_yaw),
-            ))
-
+        mesh = direct(mine, "Mesh")
+        orientation = direct(mesh, "Orientation") if mesh is not None else None
+        if orientation is None:
+            raise ValueError("MineSlot master template has no Mesh/Orientation.")
+        # Runtime facing swaps the map's X/Z angle basis. Convert the
+        # already-correct Mine -> Work Area direction by reflecting the angle
+        # across the X/Z diagonal: up->up, right->right, left->left, down->down.
+        orientation_direction = math.pi / 2.0 - direction
+        half_yaw = orientation_direction / 2.0
+        orientation.text = " ".join(game_number(value) for value in (
+            0.0,
+            -math.sin(half_yaw),
+            0.0,
+            math.cos(half_yaw),
+        ))
         curve=next((n for n in workarea.iter() if tag(n)=="BezierCurve"),None)
         if curve is None: raise ValueError("Work Area template has no BezierCurve.")
         for child in list(curve): curve.remove(child)
@@ -1012,12 +1022,12 @@ class IslandSlotEditingMixin:
         maximum.text=format_position(tuple(max(p[i] for p in points) for i in range(3)))
         StatusWindowTemplate.update(status,fraction=.7)
         append_pretty(container,mine); append_pretty(container,workarea)
-        append_map_entry(map_root,MINE_PRIMARY_GROUP,mine_id,placement["guid"],format_position(entrance))
+        append_map_entry(map_root,MINE_PRIMARY_GROUP,mine_id,target_guid,format_position(entrance))
         append_map_entry(map_root,MINE_WORKAREA_GROUP,work_id,MINE_WORKAREA_GUID,format_position(mountain))
         validate_pair(map_root,game_root)
         self._island_slot_ram_game_tree,self._island_slot_ram_map_tree=game_tree,map_tree
         StatusWindowTemplate.update(status,fraction=1)
-        self.status_var.set(f"Added {placement['name']} with Work Area | IDs: {mine_id}, {work_id} | Folder: {folder}")
+        self.status_var.set(f"Added {placement['name']} from master {MINE_MASTER_GUID} as GUID {target_guid} with Work Area | IDs: {mine_id}, {work_id} | Folder: {folder}")
         self._refresh_open_slot_map()
 
     def _island_slot_distribution_positions(
