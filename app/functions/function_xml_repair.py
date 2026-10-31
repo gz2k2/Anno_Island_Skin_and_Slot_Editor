@@ -11,8 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import app.backend.xml_backend as ET
-_TOKEN_START = 0xF0000
-_TOKEN_END = 0xFFFFD
+_TOKEN_LIMIT = 65534
+_TOKEN_PREFIX = "__AISX_INVALID_XML_"
 _INVALID_REF = re.compile(r"&#(?:x([0-9A-Fa-f]+)|([0-9]+));")
 _INVALID_REF_BYTES = re.compile(br"&#(?:x([0-9A-Fa-f]+)|([0-9]+));")
 _INVALID_CONTROL_BYTES = re.compile(br"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -28,16 +28,21 @@ def _valid_xml_codepoint(value: int) -> bool:
 def _tokenize_unsupported_bytes(raw: bytes) -> tuple[bytes, dict[str, bytes]]:
     """Fast path for the ASCII references/control bytes found in Anno XML."""
     preserved: dict[str, bytes] = {}
-    counter = 0
+    placeholders: dict[bytes, str] = {}
 
     def token(value: bytes) -> bytes:
-        nonlocal counter
-        if _TOKEN_START + counter > _TOKEN_END:
-            raise ValueError("Too many unsupported XML fragments to preserve.")
-        placeholder = chr(_TOKEN_START + counter)
-        counter += 1
-        preserved[placeholder] = value
-        return placeholder.encode("utf-8")
+        placeholder = placeholders.get(value)
+        if placeholder is None:
+            if len(placeholders) >= _TOKEN_LIMIT:
+                raise ValueError("Too many unsupported XML fragments to preserve.")
+            # ASCII XML-name-safe placeholder. The same hostile byte/reference
+            # must receive the same token in opening and closing tag names.
+            placeholder = f"{_TOKEN_PREFIX}{len(placeholders):06X}__"
+            while placeholder.encode("ascii") in raw:
+                placeholder += "_"
+            placeholders[value] = placeholder
+            preserved[placeholder] = value
+        return placeholder.encode("ascii")
 
     def replace_reference(match):
         try:
@@ -54,15 +59,18 @@ def _tokenize_unsupported_bytes(raw: bytes) -> tuple[bytes, dict[str, bytes]]:
 def _tokenize_unsupported(text: str) -> tuple[str, dict[str, bytes]]:
     """Replace parser-hostile source fragments with unique valid XML tokens."""
     preserved: dict[str, bytes] = {}
-    counter = 0
+    placeholders: dict[bytes, str] = {}
 
     def token(raw: bytes) -> str:
-        nonlocal counter
-        if _TOKEN_START + counter > _TOKEN_END:
-            raise ValueError("Too many unsupported XML fragments to preserve.")
-        value = chr(_TOKEN_START + counter)
-        counter += 1
-        preserved[value] = raw
+        value = placeholders.get(raw)
+        if value is None:
+            if len(placeholders) >= _TOKEN_LIMIT:
+                raise ValueError("Too many unsupported XML fragments to preserve.")
+            value = f"{_TOKEN_PREFIX}{len(placeholders):06X}__"
+            while value in text:
+                value += "_"
+            placeholders[raw] = value
+            preserved[value] = raw
         return value
 
     def replace_reference(match):

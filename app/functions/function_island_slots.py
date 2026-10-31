@@ -9,6 +9,9 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 import app.backend.xml_backend as ET
+from app.backend.patch_store import (
+    PATCH_STORE, build_gamedata_slot_patch, build_a7minfo_slot_patch,
+)
 from app.config.config_slot import (
     RIVER_GUID_FAMILIES,
     RIVER_GUID_ROLE,
@@ -644,10 +647,13 @@ class IslandSlotBaseMixin:
                 "label": name,
                 "command": lambda n=name, e=event: self._island_slot_add_at_event(e, n),
             })
-        slot_entries.append({
-            "label": "Riverslot",
-            "command": lambda e=event: self._island_slot_add_riverslot_at_event(e),
-        })
+        if self._experimental_enabled():
+            slot_entries.append({
+                "label": "River Slot (Experimental)",
+                "foreground": "#ff3b30",
+                "activeforeground": "#ff6b60",
+                "command": lambda e=event: self._island_slot_add_riverslot_at_event(e),
+            })
 # old riverslot start. comment out later 
 #        slot_entries.append({
 #            "kind": "cascade", "label": "Riverslot_dont_use (2 points)",
@@ -1636,6 +1642,7 @@ class IslandSlotBaseMixin:
         return result["accepted"]
 
     def _island_slot_atomic_write(self, game_tree, map_tree, game_target, map_target):
+        """Validate Slot trees, then save only slot scopes to patch JSON files."""
         accepted = self._slot_review_save_stoppers(map_tree, game_tree)
         if accepted is None:
             raise SlotSaveCancelled()
@@ -1646,79 +1653,43 @@ class IslandSlotBaseMixin:
         unresolved = [error for error in initial_report.errors if error not in accepted]
         if unresolved:
             raise ValueError("Slot validation failed:\n- " + "\n- ".join(unresolved))
-        warnings = list(initial_report.warnings) + [f"Accepted: {error}" for error in initial_report.errors]
-        game_tmp = game_target.with_suffix(game_target.suffix + ".tmp")
-        map_tmp = map_target.with_suffix(map_target.suffix + ".tmp")
-        game_backup = game_target.with_suffix(game_target.suffix + ".rollback")
-        map_backup = map_target.with_suffix(map_target.suffix + ".rollback")
-        installed_game = installed_map = False
+        warnings = list(initial_report.warnings) + [
+            f"Accepted: {error}" for error in initial_report.errors]
+
+        game_original, map_original, _game_patched, _map_patched = self._island_slot_sources()
+        # Compare against Original + every non-slot scope. Regional Settings and
+        # Gamedata Objects must never leak into the slot patch payload.
+        non_slot_game_tree = PATCH_STORE.view_without(
+            "gamedata", game_original, {"gamedata_slots"})
+        game_payload = build_gamedata_slot_patch(non_slot_game_tree, game_tree)
+        map_payload = build_a7minfo_slot_patch(map_tree)
+
+        PATCH_STORE.save_scope(
+            "gamedata", game_original, "gamedata_slots", game_payload)
         try:
-            game_tree.write(game_tmp, encoding="utf-8", xml_declaration=False, short_empty_elements=True)
-            map_tree.write(map_tmp, encoding="utf-8", xml_declaration=False, short_empty_elements=True)
-            check_game = self._slot_parse_xml(game_tmp)[0]
-            check_map = self._slot_parse_xml(map_tmp)[0]
-            written_report = validate_slot_trees(
-                check_map.getroot(), check_game.getroot(),
-                strict_deposit_ids=self._island_slot_generated_deposit_ids,
-            )
-            unresolved_written = [error for error in written_report.errors if error not in accepted]
-            if unresolved_written:
-                raise ValueError("Serialized slot validation failed:\n- " + "\n- ".join(unresolved_written))
-            written_warnings = list(written_report.warnings) + [
-                f"Accepted: {error}" for error in written_report.errors
-            ]
-            warnings = list(dict.fromkeys(warnings + written_warnings))
-            if game_target.exists():
-                game_target.replace(game_backup)
-            if map_target.exists():
-                map_target.replace(map_backup)
-            try:
-                game_tmp.replace(game_target); installed_game = True
-                map_tmp.replace(map_target); installed_map = True
-            except Exception:
-                if installed_game:
-                    game_target.unlink(missing_ok=True)
-                if installed_map:
-                    map_target.unlink(missing_ok=True)
-                if game_backup.exists():
-                    game_backup.replace(game_target)
-                if map_backup.exists():
-                    map_backup.replace(map_target)
-                raise
-            # Verify the installed destinations themselves before removing rollback
-            # files. This detects replacement/path issues in addition to temp-file
-            # serialization errors.
-            installed_game_tree = self._slot_parse_xml(game_target)[0]
-            installed_map_tree = self._slot_parse_xml(map_target)[0]
-            installed_report = validate_slot_trees(
-                installed_map_tree.getroot(), installed_game_tree.getroot(),
-                strict_deposit_ids=self._island_slot_generated_deposit_ids,
-            )
-            unresolved_installed = [
-                error for error in installed_report.errors if error not in accepted
-            ]
-            if unresolved_installed:
-                game_target.unlink(missing_ok=True)
-                map_target.unlink(missing_ok=True)
-                if game_backup.exists():
-                    game_backup.replace(game_target)
-                if map_backup.exists():
-                    map_backup.replace(map_target)
-                raise ValueError(
-                    "Installed slot XML validation failed:\n- "
-                    + "\n- ".join(unresolved_installed)
-                )
-            game_backup.unlink(missing_ok=True)
-            map_backup.unlink(missing_ok=True)
-        finally:
-            for temporary in (game_tmp, map_tmp):
-                temporary.unlink(missing_ok=True)
-            # A failure before installation must also restore renamed originals.
-            if game_backup.exists() and not game_target.exists():
-                game_backup.replace(game_target)
-            if map_backup.exists() and not map_target.exists():
-                map_backup.replace(map_target)
-        return warnings
+            PATCH_STORE.save_scope(
+                "a7minfo", map_original, "a7minfo_slots", map_payload)
+        except Exception:
+            # Keep both files consistent if A7MInfo patch generation fails.
+            PATCH_STORE.reset_scope("gamedata", game_original, "gamedata_slots")
+            raise
+
+        check_game = PATCH_STORE.view("gamedata", game_original)
+        check_map = PATCH_STORE.view("a7minfo", map_original)
+        written_report = validate_slot_trees(
+            check_map.getroot(), check_game.getroot(),
+            strict_deposit_ids=self._island_slot_generated_deposit_ids,
+        )
+        unresolved_written = [
+            error for error in written_report.errors if error not in accepted]
+        if unresolved_written:
+            PATCH_STORE.reset_scope("gamedata", game_original, "gamedata_slots")
+            PATCH_STORE.reset_scope("a7minfo", map_original, "a7minfo_slots")
+            raise ValueError(
+                "Generated slot patch validation failed:\n- "
+                + "\n- ".join(unresolved_written))
+        warnings.extend(written_report.warnings)
+        return list(dict.fromkeys(warnings))
 
     def _island_slot_capture_snapshot(self):
         """Remember the current patched/original slot XML state for Reset."""
@@ -2069,51 +2040,29 @@ class IslandSlotBaseMixin:
         PopupTemplate.schedule(window, 30, lambda: PopupTemplate.safe_activate(window))
 
     def _island_slot_reset(self):
-        """Rebuild both patched slot XML files directly from their _original sources."""
+        """Remove only Gamedata/A7MInfo slot patch scopes."""
         if not messagebox.askyesno(
             "Reset Slot Integration",
-            "Reload the complete slot configuration from the _original XML files?\n\n"
-            "All slot changes in the patched files will be discarded.",
-            parent=self.slot_map_window,
-            default="no",
-        ):
+            "Remove only the saved Slot Map patch entries?\n\n"
+            "Regional Settings, Gamedata Objects and other patches remain unchanged.",
+            parent=self.slot_map_window, default="no"):
             return
         try:
-            game_original, map_original, game_patched, map_patched = self._island_slot_sources()
-            if not game_original.is_file() or not map_original.is_file():
-                raise FileNotFoundError("The required _original XML files were not found.")
-            for source, target in ((game_original, game_patched), (map_original, map_patched)):
-                data = source.read_bytes()
-                temp = target.with_suffix(target.suffix + ".reset_tmp")
-                temp.write_bytes(data)
-                temp.replace(target)
-            # Reset must restore the original files even when the originals
-            # contain legacy cross-file differences. Those findings are warnings,
-            # not a failed reset.
-            restored_game = self._slot_parse_xml(game_patched)[0]
-            restored_map = self._slot_parse_xml(map_patched)[0]
-            report = validate_slot_trees(restored_map.getroot(), restored_game.getroot())
-            reset_warnings = list(report.errors) + list(report.warnings)
-            self._island_slot_ram_game_tree = None
-            self._island_slot_ram_map_tree = None
+            game_original, map_original, _game_patched, _map_patched = self._island_slot_sources()
+            PATCH_STORE.reset_scope("gamedata", game_original, "gamedata_slots")
+            PATCH_STORE.reset_scope("a7minfo", map_original, "a7minfo_slots")
+            self._island_slot_ram_game_tree = PATCH_STORE.view("gamedata", game_original)
+            self._island_slot_ram_map_tree = PATCH_STORE.view("a7minfo", map_original)
+            self._slot_map_pending_moves = {}
+            self._island_slot_generated_deposit_ids.clear()
+            self.island_slot_selected_ids.clear()
             self._island_slot_capture_snapshot()
-        except (OSError, ET.ParseError, UnicodeError, RuntimeError) as exc:
+        except (OSError, ET.ParseError, UnicodeError, RuntimeError, ValueError) as exc:
             messagebox.showerror("Reset Slot Integration", str(exc), parent=self.slot_map_window)
             return
-        self.island_slot_selected_ids.clear()
         self._refresh_open_slot_map()
-        if reset_warnings:
-            self.status_var.set(
-                f"Slot configuration reloaded with {len(reset_warnings)} integration warning(s)."
-            )
-            self._show_slot_validation_warning(
-                "Reset Slot Integration - Warnings",
-                reset_warnings,
-                "The original XML files were restored successfully. The entries below "
-                "describe existing cross-file differences and did not block the reset.",
-            )
-        else:
-            self.status_var.set("Slot configuration reloaded from the _original XML files.")
+        self.status_var.set(
+            "Slot patch reset; all non-slot Gamedata and A7MInfo patches were preserved.")
 
     def _island_slot_selection_clear(self, _event=None):
         if getattr(self, "_mine_placement", None) is not None:

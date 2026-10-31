@@ -4,6 +4,8 @@ import math
 import random
 from pathlib import Path
 from collections import defaultdict
+import app.backend.xml_backend as ET
+from app.backend.patch_store import PATCH_STORE
 
 
 def local_tag(node):
@@ -166,64 +168,46 @@ class DensitySession:
         return before, after
 
     def restore(self):
-        import app.backend.xml_backend as ET
-        # Re-read disk on every Restore; never reuse the saved preview baseline.
-        original = ET.parse(self.cache.path, parser=ET.XMLParser(
-            target=ET.TreeBuilder(insert_comments=True, insert_pis=True)))
-        original_grid = next((n for n in original.getroot().iter() if local_tag(n) == 'PropGrid'), None)
-        current = copy.deepcopy(self.tree)
-        grid = next((n for n in current.getroot().iter() if local_tag(n) == 'PropGrid'), None)
-        if original_grid is None or grid is None:
-            raise ValueError('PropGrid was not found. No changes restored.')
-        original_names, current_names = child(original_grid, 'FileNames'), child(grid, 'FileNames')
-        if original_names is None or current_names is None or len(original_names) > len(current_names):
-            raise ValueError('Original FileNames indices do not match the current document.')
-        original_instances = child(original_grid, 'Instances')
-        if original_instances is None:
-            raise ValueError('Original Instances were not found. No changes restored.')
-        restored = copy.deepcopy(original_instances)
-        previous = child(grid, 'Instances')
-        if previous is None:
-            grid.append(restored)
-        else:
-            index = list(grid).index(previous)
-            restored.tail = previous.tail
-            grid.remove(previous)
-            grid.insert(index, restored)
-        counts = usage_counts(current)
-        self.tree, self.usage = current, counts
-        # Restore is an unsaved change if the saved document differs.
-        self.dirty = ET.tostring(current.getroot()) != ET.tostring(self.cache.working.getroot())
+        """Remove only the saved density/instance scope and rebuild the preview."""
+        PATCH_STORE.reset_scope("rd3d", self.cache.path, "rd3d_instances")
+        current = PATCH_STORE.view("rd3d", self.cache.path)
+        self.cache.working = copy.deepcopy(current)
+        self.cache.signature = self.cache._signature()
+        self.cache.usage = usage_counts(current)
+        self.signature = self.cache.signature
+        self.baseline = copy.deepcopy(current)
+        self.tree = copy.deepcopy(current)
+        self.usage = list(self.cache.usage)
+        self.dirty = False
 
     def save(self, progress):
-        import hashlib
-        import os
-        import tempfile
-        import app.backend.xml_backend as ET
-        cache = self.cache
-        if cache.signature != self.signature or cache._signature() != self.signature:
-            raise ValueError('RD3D changed since the density preview started. Close and reopen Change Density.')
+        """Save only PropGrid/Instances to rd3d_patch.json."""
         progress(0, 3)
         if not self.dirty:
             progress(3, 3)
             return
-        fd, name = tempfile.mkstemp(prefix='.density_', suffix='.xml', dir=cache.path.parent)
-        os.close(fd)
-        temporary = Path(name)
-        try:
-            self.tree.write(temporary, encoding='utf-8', xml_declaration=False, short_empty_elements=True)
-            reloaded = ET.parse(temporary, parser=ET.XMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True)))
-            signature = hashlib.sha256(temporary.read_bytes()).digest()
-            # Allocate baseline before installation, so failure cannot half-commit RAM.
-            baseline = copy.deepcopy(reloaded)
-            progress(2, 3)
-            if cache.signature != self.signature or cache._signature() != self.signature:
-                raise ValueError('RD3D changed during density Save. No changes installed.')
-            os.replace(temporary, cache.target)
-            cache.working, cache.signature, cache.usage = reloaded, signature, list(self.usage)
-            self.signature, self.baseline, self.dirty = signature, baseline, False
-        finally:
-            temporary.unlink(missing_ok=True)
+        grid = next((node for node in self.tree.getroot().iter()
+                     if local_tag(node) == "PropGrid"), None)
+        instances = child(grid, "Instances") if grid is not None else None
+        if instances is None:
+            raise ValueError("PropGrid/Instances was not found. No density patch was saved.")
+        payload = {
+            "parent_tag": "PropGrid",
+            "child_tag": "Instances",
+            "xml": ET.tostring(instances, encoding="unicode"),
+        }
+        progress(1, 3)
+        reloaded = PATCH_STORE.save_scope(
+            "rd3d", self.cache.path, "rd3d_instances", payload)
+        progress(2, 3)
+        self.cache.working = copy.deepcopy(reloaded)
+        self.cache.signature = self.cache._signature()
+        self.cache.usage = usage_counts(reloaded)
+        self.signature = self.cache.signature
+        self.baseline = copy.deepcopy(reloaded)
+        self.tree = copy.deepcopy(reloaded)
+        self.usage = list(self.cache.usage)
+        self.dirty = False
         progress(3, 3)
 
     def map_points(self, categories):

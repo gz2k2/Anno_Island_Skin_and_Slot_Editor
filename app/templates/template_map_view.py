@@ -859,10 +859,16 @@ class MapViewTemplate:
                     populate(submenu, entry.get("entries", ()))
                     menu.add_cascade(label=entry["label"], menu=submenu)
                 else:
-                    menu.add_command(
-                        label=entry["label"], command=entry.get("command"),
-                        state=entry.get("state", "normal"),
-                    )
+                    options = {
+                        "label": entry["label"],
+                        "command": entry.get("command"),
+                        "state": entry.get("state", "normal"),
+                    }
+                    for option in ("foreground", "activeforeground",
+                                   "background", "activebackground"):
+                        if option in entry:
+                            options[option] = entry[option]
+                    menu.add_command(**options)
         menu = tk.Menu(owner, tearoff=0)
         populate(menu, entries)
         try:

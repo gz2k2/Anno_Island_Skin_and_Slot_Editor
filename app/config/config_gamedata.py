@@ -10,7 +10,7 @@ GLOBAL_AMBIENT_OPTIONS = {
 
 VEGETATION_PROP_SET_OPTIONS = {
     "Arctic": "Arctic",
-    "Enbesat": "Colony02",
+    "Enbesa": "Colony02",
     "Enbesa - Scenario02": "DLC10_Scenario02",
     "The New World": "Colony",
     "The Old World": "Moderate",

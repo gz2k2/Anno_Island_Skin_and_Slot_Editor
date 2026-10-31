@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.backend.patch_store import PATCH_STORE
 
 from app.functions.function_custom_content import (
     get_combined_categories,
@@ -162,7 +163,7 @@ class UIMixin(CustomContentTabMixin, HelpersTabMixin, SettingsTabMixin, Material
             hover_color="#242424",
             border_width=1,
             border_color="#444444",
-            command=lambda: webbrowser.open("https://github.com/gz2k2/anno_1800_island_reskinner"),
+            command=lambda: webbrowser.open("https://github.com/gz2k2"),
         ).grid(row=0, column=2, rowspan=2, padx=(6, 22), pady=14, sticky="e")
 
         self.tabs = ctk.CTkTabview(self)
@@ -535,25 +536,20 @@ class UIMixin(CustomContentTabMixin, HelpersTabMixin, SettingsTabMixin, Material
         ).grid(row=0, column=2, sticky="e")
 
     def _reset_gamedata_object_changes(self, window):
-        """Restore all editable GUIDs in New values from gamedata_original.xml."""
-        original_rows = getattr(window, "object_original_rows", [])
-        edit_rows = getattr(window, "object_edit_rows", [])
-        if not original_rows or not edit_rows:
+        """Remove only the Gamedata Objects popup patch scope."""
+        try:
+            original = Path(self.gamedata_file_var.get().strip())
+            if original.is_file():
+                PATCH_STORE.reset_scope("gamedata", original, "gamedata_objects")
+            map_original = Path(self.mapname_file_var.get().strip())
+            if map_original.is_file():
+                PATCH_STORE.reset_scope("mapname", map_original, "gamedata_objects")
+        except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+            messagebox.showerror("Gamedata Objects", str(exc), parent=window)
             return
+        self._load_gamedata_objects_into_popup(window)
+        self.status_var.set("Gamedata Objects patch reset; all other patches were preserved.")
 
-        # Rows are built from the same source order. Restore GUIDs only; IDs are
-        # read-only and always remain tied to their original object IDs.
-        restored = 0
-        for edit_row, original_row in zip(edit_rows, original_rows):
-            _id_var, guid_var = edit_row
-            _original_id, original_guid = original_row
-            if guid_var.get().strip() != original_guid:
-                guid_var.set(original_guid)
-                restored += 1
-
-        self.status_var.set(f"Objects reset to original values ({restored} GUID change(s) reverted)")
-
-    @staticmethod
     def _gamedata_objects_header(parent, row):
         header = ctk.CTkFrame(parent, corner_radius=4)
         header.grid(row=row, column=0, padx=5, pady=(0, 4), sticky="ew")

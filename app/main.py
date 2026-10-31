@@ -26,6 +26,7 @@ import sys
 import threading
 import time
 import app.backend.xml_backend as ET
+from app.backend.patch_store import PATCH_STORE
 from app.functions.function_xml_repair import parse_xml_tolerant, sanitize_xml_text
 import webbrowser
 import urllib.request
@@ -180,6 +181,8 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         self.unpack_rd3d_var = tk.BooleanVar(value=True)
         self.unpack_tmc_var = tk.BooleanVar(value=True)
         self.backup_var = tk.BooleanVar(value=True)
+        # Master switch for features and UI elements marked as experimental.
+        self.experimental_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Ready")
         self.rd3d_save_info_var = tk.StringVar(value="")
         self.gamedata_file_var = tk.StringVar()
@@ -270,78 +273,31 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
 
     def _save_gamedata_object_changes(self, window):
+        """Store only this popup's ObjectId -> GUID differences."""
         original = Path(self.gamedata_file_var.get().strip())
         if not original.is_file():
             messagebox.showerror("Gamedata Objects", "gamedata_original.xml is not available.", parent=window)
             return
-
-        guid_changes = {}
+        values = {}
         for id_var, guid_var in window.object_edit_rows:
-            object_id = id_var.get().strip()
-            new_guid = guid_var.get().strip()
-            if not object_id or not new_guid:
+            object_id, guid = id_var.get().strip(), guid_var.get().strip()
+            if not object_id or not guid:
                 messagebox.showerror("Gamedata Objects", "ID and GUID values must not be empty.", parent=window)
                 return
-            guid_changes[object_id] = new_guid
-
+            values[object_id] = guid
         try:
-            # Always rebuild gamedata_patched.xml from the complete original.
-            tree, _, _ = self._parse_xml_tolerant(original)
-            root = tree.getroot()
-            gamedata_changed = 0
-            for parent in root.iter():
-                children = list(parent)
-                id_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "id"), None)
-                guid_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "guid"), None)
-                object_id = (id_node.text or "").strip() if id_node is not None else ""
-                if object_id in guid_changes and guid_node is not None:
-                    new_guid = guid_changes[object_id]
-                    if (guid_node.text or "").strip() != new_guid:
-                        guid_node.text = new_guid
-                        gamedata_changed += 1
-
-            gamedata_patched = original.with_name("gamedata_patched.xml")
-            tree.write(gamedata_patched, encoding="utf-8", xml_declaration=False, short_empty_elements=True)
-
-            mapname_original = Path(self.mapname_file_var.get().strip())
-            mapname_patched = None
-            mapname_changed = 0
-            if mapname_original.is_file():
-                map_tree, _, _ = self._parse_xml_tolerant(mapname_original)
-                map_root = map_tree.getroot()
-                for parent in map_root.iter():
-                    children = list(parent)
-                    id_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "objectid"), None)
-                    guid_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "objectguid"), None)
-                    object_id = (id_node.text or "").strip() if id_node is not None else ""
-                    if object_id in guid_changes and guid_node is not None:
-                        new_guid = guid_changes[object_id]
-                        if (guid_node.text or "").strip() != new_guid:
-                            guid_node.text = new_guid
-                            mapname_changed += 1
-                map_tmp = mapname_patched.with_suffix(mapname_patched.suffix + ".tmp")
-                map_tree.write(map_tmp, encoding="utf-8", xml_declaration=False, short_empty_elements=True)
-                self._parse_xml_tolerant(map_tmp)
-                map_tmp.replace(mapname_patched)
-
-        except (OSError, ET.ParseError, UnicodeError) as exc:
-            messagebox.showerror("Gamedata Objects", f"The changes could not be saved:\n{exc}", parent=window)
+            PATCH_STORE.save_scope("gamedata", original, "gamedata_objects", {
+                "id_tag": "ID", "guid_tag": "guid", "values": values})
+            map_original = Path(self.mapname_file_var.get().strip())
+            if map_original.is_file():
+                PATCH_STORE.save_scope("mapname", map_original, "gamedata_objects", {
+                    "id_tag": "ObjectId", "guid_tag": "ObjectGuid", "values": values})
+        except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+            messagebox.showerror("Gamedata Objects", str(exc), parent=window)
             return
+        self._load_gamedata_objects_into_popup(window)
+        self.status_var.set(f"Saved {len(values)} GUID patch entrie(s). Other window patches were preserved.")
 
-        text = (
-            "Object changes saved.\n\n"
-            f"Gamedata: {gamedata_patched.name}\n"
-            f"Changed GUID entries: {gamedata_changed}"
-        )
-        if mapname_patched is not None:
-            text += f"\n\nMap file: {mapname_patched.name}\nChanged ObjectGuid entries: {mapname_changed}"
-        else:
-            text += "\n\nNo mapname_original.xml was selected, so no map file was written."
-        self.status_var.set(f"Objects saved: {gamedata_changed} GUID change(s)")
-        messagebox.showinfo("Gamedata Objects", text, parent=window)
-
-
-    @staticmethod
     def _collect_gamedata_objects(root):
         """Return every sibling ID/GUID pair in source order."""
         rows = []
@@ -508,11 +464,10 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                 messagebox.showerror("Gamedata", "Please select an existing gamedata_original.xml file.")
             return False
         try:
-            tree, repaired, repairs = self._parse_xml_tolerant(path)
+            tree = PATCH_STORE.view("gamedata", path)
             root = tree.getroot()
+            repaired, repairs = False, []
             repair_note = ""
-            if repaired:
-                repair_note = f" | preserved unchanged: {repairs} unsupported XML item(s)"
             values = {"GlobalAmbientName": [], "VegetationPropSetName": []}
             for element in root.iter():
                 tag = element.tag.rsplit("}", 1)[-1]
@@ -586,186 +541,33 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             parent.append(element)
 
     def _save_gamedata_patch(self):
-        """Update the latest complete Gamedata state without losing slot edits."""
+        """Save only the Regional Settings Gamedata scope to *_patch.json."""
         original = Path(self.gamedata_file_var.get().strip())
         if not original.is_file():
             messagebox.showerror(
-                "Gamedata",
-                "Please load an existing gamedata_original.xml file first.",
-            )
+                "Gamedata", "Please load an existing gamedata_original.xml file first.")
             return False
-
-        ambient_display = self.new_global_ambient_var.get()
-        vegetation_display = self.new_vegetation_var.get()
-        ambient = GLOBAL_AMBIENT_OPTIONS.get(ambient_display)
-        vegetation = VEGETATION_PROP_SET_OPTIONS.get(vegetation_display)
-
+        ambient = GLOBAL_AMBIENT_OPTIONS.get(self.new_global_ambient_var.get())
+        vegetation = VEGETATION_PROP_SET_OPTIONS.get(self.new_vegetation_var.get())
         if not ambient or not vegetation:
             messagebox.showerror("Gamedata", "The selected values are invalid.")
             return False
-
-        patched_file = original.with_name("gamedata_patched.xml")
-        # Regional Settings must extend the latest patched state. Falling back to
-        # gamedata_original.xml is allowed only before the first patched save.
-        source_file = patched_file if patched_file.is_file() else original
-
+        payload = {
+            "values": {
+                "GlobalAmbientName": ambient,
+                "VegetationPropSetName": vegetation,
+            }
+        }
         try:
-            # Load the complete latest XML. This preserves Slot Map objects and
-            # every other edit already stored in gamedata_patched.xml.
-            tree, repaired, repairs = self._parse_xml_tolerant(source_file)
-            root = tree.getroot()
-
-            ambient_count = 0
-            vegetation_count = 0
-
-            # Change only the requested elements. Everything else remains in
-            # the loaded XML tree and is written to the patched output.
-            for element in root.iter():
-                tag = element.tag
-                if isinstance(tag, str) and "}" in tag:
-                    tag = tag.rsplit("}", 1)[-1]
-
-                if tag == "GlobalAmbientName":
-                    element.text = ambient
-                    ambient_count += 1
-                elif tag == "VegetationPropSetName":
-                    element.text = vegetation
-                    vegetation_count += 1
-
-            vegetation_inserted = False
-            if ambient_count == 0:
-                messagebox.showerror(
-                    "Gamedata",
-                    "GlobalAmbientName was not found in the current Gamedata XML.",
-                )
-                return False
-
-            if vegetation_count == 0:
-                # VegetationPropSetName is optional. Insert it in the native
-                # Content/GameSessionManager/SessionSettings location.
-                session_settings = None
-                for content in root.iter():
-                    tag = content.tag.rsplit("}", 1)[-1] if isinstance(content.tag, str) else ""
-                    if tag != "Content":
-                        continue
-                    session_settings = next(
-                        (element for element in content.iter()
-                         if isinstance(element.tag, str)
-                         and element.tag.rsplit("}", 1)[-1] == "SessionSettings"),
-                        None,
-                    )
-                    if session_settings is not None:
-                        break
-                if session_settings is None:
-                    messagebox.showerror(
-                        "Gamedata",
-                        "VegetationPropSetName is missing and Content/GameSessionManager/SessionSettings "
-                        "was not found, so it cannot be inserted safely.",
-                    )
-                    return False
-                namespace = ""
-                if isinstance(session_settings.tag, str) and session_settings.tag.startswith("{"):
-                    namespace = session_settings.tag.split("}", 1)[0] + "}"
-                element = ET.Element(f"{namespace}VegetationPropSetName")
-                element.text = vegetation
-                self._insert_xml_child_preserve_layout(
-                    session_settings,
-                    element,
-                    after_tags=("HasAirGrid", "PlayableArea", "GlobalAmbientName"),
-                )
-                vegetation_count = 1
-                vegetation_inserted = True
-
-            # Apply GUID edits from the Objects popup by stable ID. ID itself is read-only.
-            guid_changes = {}
-            objects_window = getattr(self, "gamedata_objects_window", None)
-            if objects_window is not None and objects_window.winfo_exists():
-                for id_var, guid_var in objects_window.object_edit_rows:
-                    object_id = id_var.get().strip()
-                    new_guid = guid_var.get().strip()
-                    if object_id and new_guid:
-                        guid_changes[object_id] = new_guid
-
-            for parent in root.iter():
-                children = list(parent)
-                id_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "id"), None)
-                guid_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "guid"), None)
-                object_id = (id_node.text or "").strip() if id_node is not None else ""
-                if object_id in guid_changes and guid_node is not None:
-                    guid_node.text = guid_changes[object_id]
-
-            # Mirror the same ID->GUID changes into mapname_original.xml where
-            # the equivalent fields are ObjectId and ObjectGuid.
-            mapname_original = Path(self.mapname_file_var.get().strip())
-            mapname_patched = None
-            mapname_changed = 0
-            if guid_changes and mapname_original.is_file():
-                mapname_patched = mapname_original.with_name(
-                    mapname_original.name.replace("_original.xml", "_patched.xml")
-                    if mapname_original.name.endswith("_original.xml")
-                    else f"{mapname_original.stem}_patched.xml"
-                )
-                mapname_source = (
-                    mapname_patched if mapname_patched.is_file() else mapname_original
-                )
-                map_tree, _, _ = self._parse_xml_tolerant(mapname_source)
-                map_root = map_tree.getroot()
-                for parent in map_root.iter():
-                    children = list(parent)
-                    id_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "objectid"), None)
-                    guid_node = next((c for c in children if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1].lower() == "objectguid"), None)
-                    object_id = (id_node.text or "").strip() if id_node is not None else ""
-                    if object_id in guid_changes and guid_node is not None:
-                        new_guid = guid_changes[object_id]
-                        if (guid_node.text or "").strip() != new_guid:
-                            guid_node.text = new_guid
-                            mapname_changed += 1
-                mapname_patched = mapname_original.with_name(
-                    mapname_original.name.replace("_original.xml", "_patched.xml")
-                    if mapname_original.name.endswith("_original.xml")
-                    else f"{mapname_original.stem}_patched.xml"
-                )
-                map_tree.write(mapname_patched, encoding="utf-8", xml_declaration=False, short_empty_elements=True)
-
-            # Write and parse a temporary complete XML before replacing the latest
-            # patched state. This prevents a partial Regional Save from damaging it.
-            patched_tmp = patched_file.with_suffix(patched_file.suffix + ".tmp")
-            tree.write(
-                patched_tmp,
-                encoding="utf-8",
-                xml_declaration=False,
-                short_empty_elements=True,
-            )
-            self._parse_xml_tolerant(patched_tmp)
-            patched_tmp.replace(patched_file)
-
-        except (OSError, ET.ParseError, UnicodeError) as exc:
-            messagebox.showerror(
-                "Gamedata",
-                f"gamedata_patched.xml could not be saved:\n{exc}",
-            )
+            PATCH_STORE.save_scope(
+                "gamedata", original, "gamedata_regional", payload)
+        except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+            messagebox.showerror("Gamedata", f"Regional Gamedata patch could not be saved:\n{exc}")
             return False
-
-        repair_note = ""
-        if repaired:
-            repair_note = (
-                f"\n\nWhile reading the current XML, {repairs} invalid "
-                "unsupported XML item(s) were preserved unchanged."
-            )
-
-        self.status_var.set(f"Saved: {patched_file}")
-        messagebox.showinfo(
-            "Gamedata",
-            "Patched gamedata saved successfully.\n\n"
-            f"File: {patched_file}\n"
-            f"GlobalAmbientName updated: {ambient_count}\n"
-            f"VegetationPropSetName {'inserted' if vegetation_inserted else 'updated'}: {vegetation_count}"
-            + (f"\nGUID mappings changed in map file: {mapname_changed}" if mapname_patched else "")
-            + (f"\nMap file: {mapname_patched}" if mapname_patched else "")
-            + f"{repair_note}",
-        )
+        self.status_var.set(
+            "Regional Gamedata settings saved in gamedata_patch.json; "
+            "other patch scopes were preserved.")
         return True
-
 
     def _custom_material_sets_dir(self):
         value = self.custom_material_sets_folder_var.get().strip()
@@ -911,6 +713,45 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
         return material_value, file_values, status
 
+    def _normalize_rd3d_object_path_patch(self, original_path):
+        """Remove unchanged FileNames entries left by older Regional Saves."""
+        payload = PATCH_STORE.scope(original_path, "rd3d_object_paths")
+        if not payload:
+            return 0
+        tree = self._parse_xml_tolerant(original_path)[0]
+        root = tree.getroot()
+        grid = next((node for node in root.iter()
+                     if node.tag.rsplit("}", 1)[-1] == "PropGrid"), None)
+        names = next((node for node in list(grid)
+                      if node.tag.rsplit("}", 1)[-1] == "FileNames"), None) if grid is not None else None
+        if names is None:
+            raise ValueError("PropGrid/FileNames was not found in rd3d_original.xml.")
+        original_values = [(node.text or "").strip() for node in names]
+        current_values = payload.get("values", {})
+        filtered = {}
+        for raw_index, value in current_values.items():
+            index = int(raw_index)
+            value = str(value).strip()
+            if not 0 <= index < len(original_values):
+                raise ValueError(f"RD3D object-path patch index {index} is out of range.")
+            if value != original_values[index]:
+                filtered[str(index)] = value
+        normalized = {
+            "container_tag": "PropGrid",
+            "parent_tag": "FileNames",
+            "values": filtered,
+        }
+        expected = {
+            "container_tag": payload.get("container_tag", "PropGrid"),
+            "parent_tag": payload.get("parent_tag", "FileNames"),
+            "values": {str(key): str(value).strip()
+                       for key, value in current_values.items()},
+        }
+        if normalized != expected:
+            PATCH_STORE.save_scope(
+                "rd3d", original_path, "rd3d_object_paths", normalized)
+        return len(filtered)
+
     def _load_rd3d_xml(self, show_errors=True):
         self._xml_loading_depth += 1
         try:
@@ -932,10 +773,14 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                 messagebox.showerror("rd3d.data", "Please select an existing rd3d_original.xml file.")
             return False
         try:
-            tree, repaired, repairs = self._parse_xml_tolerant(path)
+            # Migrate old bloated patches once. Entries identical to the original
+            # FileNames list are removed from rd3d_patch.json.
+            self._normalize_rd3d_object_path_patch(path)
+            # Always display the reproducible effective document: immutable
+            # rd3d_original.xml plus every scope in rd3d_patch.json.
+            tree = PATCH_STORE.view("rd3d", path)
             root = tree.getroot()
-            if repaired:
-                self.status_var.set(f"XML loaded with preserved original content: {path.name} ({repairs} unsupported item(s))")
+            repaired, repairs = False, []
             found = []
             prop_grid = next((e for e in root.iter() if e.tag.rsplit("}", 1)[-1] == "PropGrid"), None)
             file_node = next((e for e in list(prop_grid) if e.tag.rsplit("}", 1)[-1] == "FileNames"), None) if prop_grid is not None else None
@@ -957,16 +802,22 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             display = "\n".join(found) or "Not found"
             self.material_set_var.set(display)
 
-            patch_material, patch_file_names, patch_status = self._load_rd3d_patch_values(
-                path,
-                len(file_names),
-            )
-            new_file_names = patch_file_names if patch_file_names is not None else file_names
-            self._set_rd3d_file_names(file_names, usage, new_file_names)
-            if patch_material:
-                self.new_material_set_var.set(patch_material)
-            elif len(found) == 1:
+            # Original values remain the left-side baseline. Effective values
+            # from Original + Patch are shown and edited on the right side.
+            original_tree = self._parse_xml_tolerant(path)[0]
+            original_root = original_tree.getroot()
+            original_grid = next((e for e in original_root.iter()
+                                  if e.tag.rsplit("}", 1)[-1] == "PropGrid"), None)
+            original_names_node = next((e for e in list(original_grid)
+                                        if e.tag.rsplit("}", 1)[-1] == "FileNames"), None) if original_grid is not None else None
+            original_file_names = [(e.text or "").strip() for e in list(original_names_node)] if original_names_node is not None else []
+            if len(original_file_names) != len(file_names):
+                raise ValueError(
+                    "RD3D FileNames count differs between original and effective patch view.")
+            self._set_rd3d_file_names(original_file_names, usage, file_names)
+            if len(found) == 1:
                 self.new_material_set_var.set(found[0])
+            patch_status = "Loaded effective values from rd3d_original.xml + rd3d_patch.json"
 
             map_points = []
             if instance_node is not None:
@@ -1017,7 +868,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                 f"{len(map_points)} map points | {patch_status}"
             )
             return True
-        except (ET.ParseError, OSError) as exc:
+        except (ET.ParseError, OSError, UnicodeError, ValueError) as exc:
             self.material_set_var.set("Error while reading")
             self._set_rd3d_file_names([])
             if show_errors:
@@ -1192,103 +1043,38 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
 
     def _reset_rd3d_object_paths(self):
-        """Reset only the editable second Path lines to rd3d_original.xml values."""
-        changed = 0
-        for _index, original, variable, _count in self.rd3d_file_names:
-            if variable.get().strip() != original:
-                variable.set(original)
-                changed += 1
-        self._rd3d_refresh_found_categories()
-        self._render_rd3d_file_names()
-        if self.rd3d_objects_window is not None and self.rd3d_objects_window.winfo_exists():
-            self._refresh_rd3d_replace_from_menu(self.rd3d_objects_window)
-        self._rebuild_rd3d_map_category_buttons()
-        self._schedule_rd3d_map_redraw()
-        self.status_var.set(f"RD3D object paths reset: {changed} change(s) reverted")
+        """Remove only the RD3D Objects FileNames patch scope."""
+        original = Path(self.rd3d_file_var.get().strip())
+        try:
+            if original.is_file():
+                PATCH_STORE.reset_scope("rd3d", original, "rd3d_object_paths")
+        except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+            messagebox.showerror("RD3D Objects", str(exc), parent=self.rd3d_objects_window)
+            return
+        self._load_rd3d_xml(show_errors=True)
+        self.status_var.set("RD3D object-path patch reset; settings and instance patches were preserved.")
 
     def _save_rd3d_object_paths(self):
-        """Save the editable second Path lines to the complete rd3d_patched.xml."""
+        """Store only changed FileNames indices for the RD3D Objects popup."""
         original = Path(self.rd3d_file_var.get().strip())
         if not original.is_file():
-            messagebox.showerror(
-                "RD3D Objects", "Please load an existing rd3d_original.xml file first.",
-                parent=self.rd3d_objects_window,
-            )
+            messagebox.showerror("RD3D Objects", "rd3d_original.xml is not available.", parent=self.rd3d_objects_window)
             return
-        if not self.rd3d_file_names:
-            messagebox.showerror(
-                "RD3D Objects", "No FileNames list has been loaded.",
-                parent=self.rd3d_objects_window,
-            )
-            return
-
-        values = []
-        changed = 0
+        values = {}
         for index, original_value, variable, _count in self.rd3d_file_names:
             value = variable.get().strip()
             if not value:
-                messagebox.showerror(
-                    "RD3D Objects", f"The editable Path at index {index} must not be empty.",
-                    parent=self.rd3d_objects_window,
-                )
+                messagebox.showerror("RD3D Objects", f"Path at index {index} must not be empty.", parent=self.rd3d_objects_window)
                 return
-            values.append(value)
             if value != original_value:
-                changed += 1
-
-        patched = original.with_name("rd3d_patched.xml")
-        # Preserve other changes already present in the patched file, especially
-        # MaterialSetFileName. If no patched file exists, start from the original.
-        source = patched if patched.is_file() else original
+                values[str(index)] = value
         try:
-            tree, _repaired, _repairs = self._parse_xml_tolerant(source)
-            root = tree.getroot()
-            file_names = None
-            for propgrid in root.iter():
-                if not isinstance(propgrid.tag, str) or propgrid.tag.rsplit("}", 1)[-1].lower() != "propgrid":
-                    continue
-                file_names = next(
-                    (child for child in list(propgrid)
-                     if isinstance(child.tag, str)
-                     and child.tag.rsplit("}", 1)[-1].lower() == "filenames"),
-                    None,
-                )
-                if file_names is not None:
-                    break
-            if file_names is None:
-                raise RuntimeError("PropGrid/FileNames was not found.")
-            children = list(file_names)
-            if len(children) != len(values):
-                raise RuntimeError(
-                    f"FileNames count mismatch: GUI {len(values)}, XML {len(children)}."
-                )
-            for child, value in zip(children, values):
-                child.text = value
-            tree.write(
-                patched, encoding="utf-8", xml_declaration=False,
-                short_empty_elements=True,
-            )
-        except (OSError, ET.ParseError, UnicodeError, RuntimeError) as exc:
-            messagebox.showerror(
-                "RD3D Objects", f"rd3d_patched.xml could not be saved:\n{exc}",
-                parent=self.rd3d_objects_window,
-            )
+            PATCH_STORE.save_scope("rd3d", original, "rd3d_object_paths", {
+                "container_tag": "PropGrid", "parent_tag": "FileNames", "values": values})
+        except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+            messagebox.showerror("RD3D Objects", str(exc), parent=self.rd3d_objects_window)
             return
-
-        self._rd3d_refresh_found_categories()
-        self._rebuild_rd3d_map_category_buttons()
-        self._schedule_rd3d_map_redraw()
-        self.status_var.set(
-            f"RD3D object paths saved: {changed} changed path(s) | {patched.name}"
-        )
-        self.rd3d_save_info_var.set(
-            f"Saved: {patched.name} | {len(values)} paths | {changed} changed"
-        )
-        messagebox.showinfo(
-            "RD3D Objects",
-            f"Paths saved to:\n{patched}\n\nChanged paths: {changed}",
-            parent=self.rd3d_objects_window,
-        )
+        self.status_var.set(f"Saved {len(values)} RD3D path patch entrie(s).")
 
     @staticmethod
     def _parse_rd3d_position(text):
@@ -1526,12 +1312,11 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                 for child, value in zip(children, file_name_values):
                     child.text = value
 
-            tree.write(
-                patched_file,
-                encoding="utf-8",
-                xml_declaration=False,
-                short_empty_elements=True,
-            )
+            # Regional Settings owns only MaterialSetFileName. FileNames are
+            # exclusively owned by the RD3D Objects Table and must not be replaced
+            # here with a complete list of original/effective values.
+            PATCH_STORE.save_scope("rd3d", original, "rd3d_settings", {
+                "values": {"MaterialSetFileName": material_value}})
 
         except (OSError, ET.ParseError, UnicodeError) as exc:
             messagebox.showerror(
@@ -3569,6 +3354,8 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             self.unpack_rd3d_var.set(config.getboolean("Options", "unpack_rd3d", fallback=True))
             self.unpack_tmc_var.set(config.getboolean("Options", "unpack_tmc", fallback=True))
             self.backup_var.set(config.getboolean("Options", "backup", fallback=True))
+            self.experimental_var.set(
+                config.getboolean("Options", "experimental", fallback=False))
             self.tmc_parallel_var.set(str(config.getint("Options", "tmc_parallel_processes", fallback=4)))
         except (OSError, configparser.Error, ValueError) as exc:
             messagebox.showwarning("Configuration", f"config.ini could not be loaded:\n{exc}")
@@ -3594,6 +3381,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             "unpack_rd3d": str(self.unpack_rd3d_var.get()),
             "unpack_tmc": str(self.unpack_tmc_var.get()),
             "backup": str(self.backup_var.get()),
+            "experimental": str(self.experimental_var.get()),
             "tmc_parallel_processes": self.tmc_parallel_var.get().strip() or "4",
         }
         try:
@@ -3603,6 +3391,11 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         except OSError as exc:
             messagebox.showerror("Configuration", f"config.ini could not be saved:\n{exc}")
             return False
+
+    def _experimental_enabled(self):
+        """Return whether UI/features explicitly marked experimental are enabled."""
+        variable = getattr(self, "experimental_var", None)
+        return bool(variable is not None and variable.get())
 
     def _save_config_with_feedback(self):
         if self._save_config():

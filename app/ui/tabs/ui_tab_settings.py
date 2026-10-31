@@ -17,9 +17,10 @@ class SettingsTabMixin:
         general_tab = settings_tabs.add("General")
         map_folders_tab = settings_tabs.add("Map Folders")
         custom_tab = settings_tabs.add("Custom")
+        expert_tab = settings_tabs.add("Expert Settings")
         settings_tabs.set("General")
 
-        for settings_tab in (general_tab, map_folders_tab, custom_tab):
+        for settings_tab in (general_tab, map_folders_tab, custom_tab, expert_tab):
             settings_tab.grid_columnconfigure(0, weight=1)
             settings_tab.grid_rowconfigure(0, weight=1)
 
@@ -168,6 +169,28 @@ class SettingsTabMixin:
             justify="left",
             wraplength=850,
         ).grid(row=5, column=0, columnspan=3, padx=15, pady=(2, 10), sticky="ew")
+
+        expert_box = ctk.CTkScrollableFrame(expert_tab, orientation="vertical")
+        expert_box.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+        expert_box.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            expert_box, text="Experimental features",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).grid(row=0, column=0, padx=15, pady=(15, 5), sticky="w")
+        ctk.CTkCheckBox(
+            expert_box, text="Experimental", variable=self.experimental_var,
+            onvalue=True, offvalue=False,
+        ).grid(row=1, column=0, padx=15, pady=(8, 4), sticky="w")
+        ctk.CTkLabel(
+            expert_box,
+            text=(
+                "Enables functions and UI elements marked as experimental. "
+                "Experimental features may be incomplete or unstable. "
+                "Currently this controls River Slot placement in Slot Configuration."
+            ),
+            text_color="#ff6b6b", anchor="w", justify="left", wraplength=850,
+        ).grid(row=2, column=0, padx=15, pady=(4, 15), sticky="ew")
 
         footer = ctk.CTkFrame(tab, fg_color="transparent")
         footer.grid(row=1, column=0, padx=20, pady=(10, 15), sticky="ew")

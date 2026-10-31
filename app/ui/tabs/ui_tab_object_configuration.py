@@ -27,6 +27,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 import app.backend.xml_backend as ET
+from app.backend.patch_store import PATCH_STORE
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
@@ -222,10 +223,10 @@ class Rd3dXmlRamCache:
         progress(0, 3)
         self.original = TmcXmlRamCache._parse(self.path)
         progress(1, 3)
+        # The generated XML is disposable. Rebuild it from immutable original
+        # plus every saved scope before opening Object Map / Change Density.
+        self.working = PATCH_STORE.materialize("rd3d", self.path, self.target)
         self.signature = self._signature()
-        self.working = TmcXmlRamCache._parse(self.target) if self.signature is not None else copy.deepcopy(self.original)
-        if self._signature() != self.signature:
-            raise ValueError('RD3D changed during loading. Please retry.')
         original_nodes, grid = self._names(self.original)
         current_nodes, grid = self._names(self.working)
         if len(original_nodes) > len(current_nodes):
@@ -249,40 +250,40 @@ class Rd3dXmlRamCache:
         return self
 
     def save(self, values, progress):
-        if len(values) != len(self.values) or any(not v for v in values):
+        """Save only Object Table differences to rd3d_patch.json."""
+        if len(values) != len(self.original_values) or any(not value for value in values):
             raise ValueError('Invalid FileNames values/count.')
-        # Other editors still write RD3D directly. Never overwrite their changes
-        # with a stale cache: reload the cache explicitly after such a conflict.
-        if self._signature() != self.signature:
-            raise ValueError('rd3d_patched.xml changed outside Objects Table (rd3d). '
-                             'Use Reload Cache, then reapply your edits.')
-        tree = copy.deepcopy(self.working)
-        nodes, _ = self._names(tree)
-        changed = sum(a != b for a, b in zip(self.values, values))
-        if not changed:
-            progress(3, 3)
-            return 0
-        for node, value in zip(nodes, values):
-            node.text = value
+        differences = {
+            str(index): value
+            for index, (original, value) in enumerate(zip(self.original_values, values))
+            if value != original
+        }
         progress(1, 3)
-        fd, name = tempfile.mkstemp(prefix='.rd3d_patch_', suffix='.xml', dir=self.path.parent)
-        os.close(fd)
-        temporary = Path(name)
-        try:
-            tree.write(temporary, encoding='utf-8', xml_declaration=False, short_empty_elements=True)
-            reloaded = TmcXmlRamCache._parse(temporary)
-            signature = hashlib.sha256(temporary.read_bytes()).digest()
-            progress(2, 3)
-            if self._signature() != self.signature:
-                raise ValueError('RD3D changed while saving. No cached edits were installed.')
-            os.replace(temporary, self.target)
-            self.working = reloaded
-            self.values = list(values)
-            self.signature = signature
-        finally:
-            temporary.unlink(missing_ok=True)
+        reloaded = PATCH_STORE.save_scope(
+            'rd3d', self.path, 'rd3d_object_paths', {
+                'container_tag': 'PropGrid',
+                'parent_tag': 'FileNames',
+                'values': differences,
+            })
+        progress(2, 3)
+        nodes, grid = self._names(reloaded)
+        self.working = copy.deepcopy(reloaded)
+        self.values = [(node.text or '').strip() for node in nodes]
+        self.signature = self._signature()
+        self.usage = [0] * len(nodes)
+        tag = lambda node: node.tag.rsplit('}', 1)[-1] if isinstance(node.tag, str) else ''
+        instances = next((node for node in grid if tag(node) == 'Instances'), None)
+        if instances is not None:
+            for instance in instances:
+                index_node = next((node for node in instance if tag(node) == 'Index'), None)
+                try:
+                    index = int((index_node.text or '').strip()) if index_node is not None else -1
+                except ValueError:
+                    continue
+                if 0 <= index < len(self.usage):
+                    self.usage[index] += 1
         progress(3, 3)
-        return changed
+        return len(differences)
 
 
 
@@ -851,18 +852,27 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         owner = self.object_configuration_table1_window
         if not messagebox.askyesno(
             "Reset Objects Table (rd3d)",
-            "Reset all Object values in Objects Table (rd3d) to their original values?\n\n"
-            "All unsaved table changes will be discarded.",
-            parent=owner,
-            default="no",
-            icon="warning",
-        ):
+            "Remove only the saved RD3D Objects Table patch and restore original paths?",
+            parent=owner, default="no", icon="warning"):
             return
-        for _index, original, variable, _count in self.object_configuration_table1_rows:
-            variable.set(original)
+        original = Path(self.rd3d_file_var.get().strip())
+        try:
+            effective = PATCH_STORE.reset_scope(
+                "rd3d", original, "rd3d_object_paths")
+            cache = self.rd3d_ram_cache
+            if cache is not None and cache.path == original:
+                cache.working = copy.deepcopy(effective)
+                nodes, _grid = cache._names(effective)
+                cache.values = [(node.text or "").strip() for node in nodes]
+                cache.signature = cache._signature()
+            for _index, original_value, variable, _count in self.object_configuration_table1_rows:
+                variable.set(original_value)
+        except (OSError, ET.ParseError, UnicodeError, ValueError) as exc:
+            messagebox.showerror("Objects Table (rd3d)", str(exc), parent=owner)
+            return
         self._render_object_configuration_table_1()
         self._rd3d_ram_preview_paths()
-        self.status_var.set("Objects Table (rd3d) reset to original values (RAM only)")
+        self.status_var.set("Objects Table (rd3d) patch removed; other RD3D patches preserved.")
 
 
     def _open_object_configuration_table_2(self):
