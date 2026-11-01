@@ -164,6 +164,8 @@ jobs:
     needs: meta
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
@@ -192,6 +194,8 @@ jobs:
           git clone --depth 1 --branch "$RDACONSOLE_REF" --recurse-submodules "$RDACONSOLE_REPO" src-rda
           csproj="$(find src-rda -name RdaConsole.csproj | head -n1)"
           test -n "$csproj" || { echo "RdaConsole.csproj not found"; exit 1; }
+          # RDAExplorer.dll assumes Windows path separators; patch it for Linux.
+          python3 .github/scripts/patch_rdaexplorer.py "$(dirname "$csproj")/lib/RDAExplorer.dll"
           dotnet publish "$csproj" -c Release -r linux-x64 --self-contained true \
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:DebugType=None -o out/RdaConsole
