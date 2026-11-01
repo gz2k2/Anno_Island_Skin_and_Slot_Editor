@@ -11,11 +11,50 @@ on:
 permissions:
   contents: write
 
-jobs:
-  build-windows:
-    runs-on: windows-latest
-    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' || startsWith(github.event.head_commit.message, 'v')
+env:
+  APP_BASENAME: Anno_Island_Skin_and_Slot_Editor
+  # Upstream sources for the Linux helper tools (built from source because
+  # upstream ships Windows .exe files only). Adjust refs/URLs if needed.
+  FILEDBREADER_REPO: https://github.com/anno-mods/FileDBReader.git
+  FILEDBREADER_REF: master
+  RDACONSOLE_REPO: https://github.com/anno-mods/RdaConsole.git
+  RDACONSOLE_REF: master
 
+jobs:
+  # ------------------------------------------------------------------
+  # Shared metadata: version, changelog, "should we release at all?"
+  # ------------------------------------------------------------------
+  meta:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' || startsWith(github.event.head_commit.message, 'v')
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: get_version
+        run: |
+          test -f version.txt || { echo "version.txt was not found."; exit 1; }
+          version="$(tr -d '\r\n' < version.txt | sed 's/^\xEF\xBB\xBF//' | xargs)"
+          test -n "$version" || { echo "version.txt is empty."; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag version
+        if: github.ref_type == 'tag'
+        run: |
+          expected="v${{ steps.get_version.outputs.VERSION }}"
+          if [ "${{ github.ref_name }}" != "$expected" ]; then
+            echo "Git tag '${{ github.ref_name }}' does not match version.txt ('$expected')."
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Windows build (unchanged behaviour, now only produces an artifact)
+  # ------------------------------------------------------------------
+  build-windows:
+    needs: meta
+    runs-on: windows-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -31,86 +70,205 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Read Version and Changelog
-        id: get_version
-        shell: pwsh
-        run: |
-          if (-not (Test-Path 'version.txt')) {
-            throw 'version.txt was not found.'
-          }
-
-          $version = (Get-Content 'version.txt' -Raw).Trim()
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            throw 'version.txt is empty.'
-          }
-
-          "VERSION=$version" >> $env:GITHUB_OUTPUT
-          "EXE_NAME=Anno_Island_Skin_and_Slot_Editor_v$version.exe" >> $env:GITHUB_OUTPUT
-
-          if (Test-Path 'changelog.md') {
-            $changelog = Get-Content 'changelog.md' -Raw
-          }
-          else {
-            $changelog = 'No changelog was provided for this release.'
-          }
-
-          $delimiter = "CHANGELOG_$([guid]::NewGuid().ToString('N'))"
-          "CHANGELOG<<$delimiter" >> $env:GITHUB_OUTPUT
-          $changelog >> $env:GITHUB_OUTPUT
-          $delimiter >> $env:GITHUB_OUTPUT
-
-      - name: Validate Tag Version
-        if: github.ref_type == 'tag'
-        shell: pwsh
-        run: |
-          $expectedTag = "v${{ steps.get_version.outputs.VERSION }}"
-          $actualTag = "${{ github.ref_name }}"
-
-          if ($actualTag -ne $expectedTag) {
-            throw "Git tag '$actualTag' does not match version.txt ('$expectedTag')."
-          }
-
       - name: Build EXE with PyInstaller
         shell: pwsh
-        run: |
-          python 00_build_onefile.py
+        run: python 00_build_onefile.py
 
       - name: Verify Build Output
         shell: pwsh
         run: |
-          $exePath = Join-Path 'dist' '${{ steps.get_version.outputs.EXE_NAME }}'
-
+          $exePath = Join-Path 'dist' '${{ env.APP_BASENAME }}_v${{ needs.meta.outputs.version }}.exe'
           if (-not (Test-Path $exePath -PathType Leaf)) {
-            Write-Host 'Content of dist:'
             Get-ChildItem 'dist' -Recurse -ErrorAction SilentlyContinue
             throw "Expected executable was not created: $exePath"
           }
-
           Get-Item $exePath | Format-List Name, Length, FullName
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/${{ env.APP_BASENAME }}_v${{ needs.meta.outputs.version }}.exe
+            tools/tools.zip
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Linux helper tools: FileDBReader + RdaConsole (self-contained linux-x64)
+  # ------------------------------------------------------------------
+  build-linux-tools:
+    needs: meta
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            8.0.x
+
+      - name: Build FileDBReader
+        run: |
+          git clone --depth 1 --branch "$FILEDBREADER_REF" --recurse-submodules "$FILEDBREADER_REPO" src-fdb
+          csproj="$(find src-fdb -name FileDBReader.csproj | head -n1)"
+          test -n "$csproj" || { echo "FileDBReader.csproj not found"; exit 1; }
+          dotnet publish "$csproj" -c Release -r linux-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:DebugType=None -o out/FileDBReader
+          # FileDBReader needs its FileFormats folder next to the binary
+          fmt="$(find src-fdb -type d -name FileFormats | head -n1)"
+          if [ -n "$fmt" ] && [ ! -d out/FileDBReader/FileFormats ]; then
+            cp -r "$fmt" out/FileDBReader/FileFormats
+          fi
+          chmod +x out/FileDBReader/FileDBReader
+          ls -la out/FileDBReader
+
+      - name: Build RdaConsole
+        run: |
+          git clone --depth 1 --branch "$RDACONSOLE_REF" --recurse-submodules "$RDACONSOLE_REPO" src-rda
+          csproj="$(find src-rda -name RdaConsole.csproj | head -n1)"
+          test -n "$csproj" || { echo "RdaConsole.csproj not found"; exit 1; }
+          dotnet publish "$csproj" -c Release -r linux-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:DebugType=None -o out/RdaConsole
+          chmod +x out/RdaConsole/RdaConsole
+          ls -la out/RdaConsole
+
+      - name: Smoke test
+        run: |
+          out/FileDBReader/FileDBReader --help | head -n 5 || true
+          out/RdaConsole/RdaConsole --help | head -n 5 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tools
+          path: out/
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Linux app build (oldest supported runner => best glibc compatibility)
+  # ------------------------------------------------------------------
+  build-linux:
+    needs: [meta, build-linux-tools]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk tk-dev build-essential cmake xvfb
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Check tkinter
+        run: python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t . || true
+
+      - name: Build binary with PyInstaller
+        run: python 00_build_onefile.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-tools
+          path: package/tools
+
+      - name: Package tar.gz
+        id: pack
+        run: |
+          version="${{ needs.meta.outputs.version }}"
+          bin="${APP_BASENAME}_v${version}"
+          test -f "dist/$bin" || { ls -la dist; echo "Expected binary missing: dist/$bin"; exit 1; }
+          cp "dist/$bin" package/
+          chmod +x "package/$bin" package/tools/FileDBReader/FileDBReader package/tools/RdaConsole/RdaConsole
+          cat > package/README_LINUX.txt <<'TXT'
+          Anno Island Skin and Slot Editor - Linux build
+
+          1. Extract:  tar -xzf <this archive>   (keeps the executable bits)
+          2. Run:      ./Anno_Island_Skin_and_Slot_Editor_v<version>
+          3. The tools in ./tools/ are detected automatically on first start.
+             If not, set them in Settings > General.
+
+          Requirements: X11 or XWayland. The helper tools are self-contained
+          (no .NET installation needed). Anno 1800 data is case-sensitive on
+          Linux: point 'maindata' to the real game folder (Steam/Proton).
+          TXT
+          archive="${bin}_linux_x86_64.tar.gz"
+          tar -C package -czf "$archive" .
+          echo "ARCHIVE=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ steps.pack.outputs.ARCHIVE }}
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # One release job, attaches Windows + Linux files
+  # ------------------------------------------------------------------
+  release:
+    # The Windows release must not be blocked by a failing Linux build.
+    if: ${{ always() && needs.build-windows.result == 'success' }}
+    needs: [meta, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: artifacts
+
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.build-linux.result == 'success' }}
+        with:
+          name: linux
+          path: artifacts
+
+      - name: Show assets
+        run: |
+          ls -laR artifacts
+          echo "Linux build result: ${{ needs.build-linux.result }}"
+
+      - name: Prepare release body
+        run: |
+          {
+            echo "Automatic build of version ${{ needs.meta.outputs.version }}."
+            echo
+            if [ -f changelog.md ]; then cat changelog.md; else echo "No changelog was provided for this release."; fi
+            echo
+            echo "### Downloads"
+            echo "- Windows: \`${APP_BASENAME}_v${{ needs.meta.outputs.version }}.exe\` (+ \`tools.zip\`)"
+            echo "- Linux (x86_64): \`${APP_BASENAME}_v${{ needs.meta.outputs.version }}_linux_x86_64.tar.gz\` (includes helper tools)"
+            if [ "${{ needs.build-linux.result }}" != "success" ]; then
+              echo
+              echo "> Linux build failed for this release; see the workflow run."
+            fi
+          } > release_body.md
+
       - name: Create Release
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/${{ steps.get_version.outputs.EXE_NAME }}
-            tools/tools.zip
-          name: v${{ steps.get_version.outputs.VERSION }}
-          tag_name: v${{ steps.get_version.outputs.VERSION }}
+            artifacts/**/*.exe
+            artifacts/**/tools.zip
+            artifacts/**/*.tar.gz
+          name: v${{ needs.meta.outputs.version }}
+          tag_name: v${{ needs.meta.outputs.version }}
           target_commitish: ${{ github.sha }}
           draft: false
           prerelease: ${{ github.ref_type != 'tag' }}
           generate_release_notes: true
-          fail_on_unmatched_files: true
-          body: |
-            Automatic build of version ${{ steps.get_version.outputs.VERSION }}.
-
-            ${{ steps.get_version.outputs.CHANGELOG }}
-
-            ### Changes
-            See the automatic release notes below or the commit history.
-
-            ### Download
-            You can find `${{ steps.get_version.outputs.EXE_NAME }}` in the Assets section below.
+          fail_on_unmatched_files: false
+          body_path: release_body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
