@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
+from app.config.config_platform import FILE_DB_READER_NAME, RDA_CONSOLE_NAME
+
 
 class SettingsTabMixin:
     """Settings UI split into tabs with fixed bottom-right actions."""
@@ -58,11 +60,11 @@ class SettingsTabMixin:
         self._path_row(
             general_box,
             3,
-            "RdaConsole.exe:",
+            f"{RDA_CONSOLE_NAME}:",
             self.rda_var,
-            lambda: self._select_exe(self.rda_var, "RdaConsole.exe"),
+            lambda: self._select_exe(self.rda_var, RDA_CONSOLE_NAME),
         )
-        self._path_row(general_box, 4, "FileDBReader.exe:", self.fdb_var, self._select_fdb)
+        self._path_row(general_box, 4, f"{FILE_DB_READER_NAME}:", self.fdb_var, self._select_fdb)
 
         ctk.CTkLabel(
             general_box,

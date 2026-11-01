@@ -74,6 +74,15 @@ except ImportError as exc:
         "config_colors.py is missing. Place it in the same folder as the application/script."
     ) from exc
 
+from app.config.config_platform import (
+    FILE_DB_READER_NAME,
+    IS_WINDOWS,
+    RDA_CONSOLE_NAME,
+    ensure_executable,
+    find_bundled_tool,
+    open_folder,
+)
+
 def get_app_dir() -> Path:
     """Return the persistent application directory.
 
@@ -99,6 +108,7 @@ def get_bundle_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 BUNDLE_DIR = get_bundle_dir()
+
 
 BUNDLED_XML_DIR = BUNDLE_DIR / "data" / "xml"
 BUNDLED_XML_FORMATS = {
@@ -1653,7 +1663,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             return None, None
         rda_console = Path(self.rda_var.get().strip())
         if not rda_console.is_file():
-            messagebox.showerror("Exports", "RdaConsole.exe is not configured. Please configure it in Settings.")
+            messagebox.showerror("Exports", f"{RDA_CONSOLE_NAME} is not configured. Please configure it in Settings.")
             return None, None
         archives = [maindata / f"data{i}.rda" for i in range(34) if (maindata / f"data{i}.rda").is_file()]
         if not archives:
@@ -2228,13 +2238,18 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             self.pack_file_var.set(value)
 
     def _select_exe(self, variable, expected):
-        value = filedialog.askopenfilename(title=expected, filetypes=[(expected, expected), ("Programs", "*.exe")])
+        if IS_WINDOWS:
+            filetypes = [(expected, expected), ("Programs", "*.exe")]
+        else:
+            filetypes = [(expected, expected), ("All files", "*")]
+        value = filedialog.askopenfilename(title=expected, filetypes=filetypes)
         if value:
+            ensure_executable(value)
             variable.set(value)
             self._save_config()
 
     def _select_fdb(self):
-        self._select_exe(self.fdb_var, "FileDBReader.exe")
+        self._select_exe(self.fdb_var, FILE_DB_READER_NAME)
 
     def _start_unpack(self):
         if self._busy():
@@ -2995,7 +3010,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         # to a PIPE, Windows gives it a pipe handle instead of a real console screen
         # buffer and RdaConsole can crash with "The handle is invalid".
         # Therefore RdaConsole is executed without redirected stdout/stderr.
-        is_rda_console = Path(str(command[0])).name.lower() == "rdaconsole.exe"
+        is_rda_console = Path(str(command[0])).stem.lower() == "rdaconsole"
         if is_rda_console and os.name == "nt":
             flags = subprocess.CREATE_NEW_CONSOLE
             startupinfo = subprocess.STARTUPINFO()
@@ -3091,13 +3106,15 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
     def _validate_settings(self):
         values = [
-            ("RdaConsole.exe", self.rda_var.get()),
-            ("FileDBReader.exe", self.fdb_var.get()),
+            (RDA_CONSOLE_NAME, self.rda_var.get()),
+            (FILE_DB_READER_NAME, self.fdb_var.get()),
             ("Bundled Island_Gamedata XML", BUNDLED_XML_FORMATS["gamedata"]),
             ("Bundled Island_RD3D XML", BUNDLED_XML_FORMATS["rd3d"]),
             ("Bundled a7minfo.xml", BUNDLED_XML_FORMATS["a7minfo"]),
             ("Bundled tmc.xml", BUNDLED_XML_FORMATS["tmc"]),
         ]
+        for name, value in values[:2]:
+            ensure_executable(value)
         return [f"{name}: not found ({value or 'no path'})" for name, value in values if not Path(value).is_file()]
 
     def _validate_settings_dialog(self):
@@ -3225,7 +3242,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                                 f"{export_destination}",
                             ):
                                 try:
-                                    os.startfile(str(export_destination))
+                                    open_folder(export_destination)
                                 except OSError as exc:
                                     messagebox.showerror(
                                         "Export Map",
@@ -3337,6 +3354,21 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         except OSError:
             pass
 
+    def _autodetect_tools(self):
+        """Fill empty/invalid tool paths from a tools/ folder next to the app."""
+        for variable, folder, name in (
+            (self.rda_var, "RdaConsole", RDA_CONSOLE_NAME),
+            (self.fdb_var, "FileDBReader", FILE_DB_READER_NAME),
+        ):
+            current = variable.get().strip()
+            if current and Path(current).is_file():
+                ensure_executable(current)
+                continue
+            found = find_bundled_tool((APP_DIR, BUNDLE_DIR), folder, name)
+            if found:
+                ensure_executable(found)
+                variable.set(found)
+
     def _load_config(self):
         config = configparser.ConfigParser(interpolation=None)
         try:
@@ -3347,6 +3379,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             options = config["Options"] if config.has_section("Options") else {}
             self.rda_var.set(paths.get("rda_console", ""))
             self.fdb_var.set(paths.get("file_db_reader", ""))
+            self._autodetect_tools()
             self.gamefiles_var.set(paths.get("gamefiles", ""))
             self.island_export_custom_var.set(paths.get("island_export_custom", ""))
             self.original_maps_var.set(paths.get("original_maps", ""))

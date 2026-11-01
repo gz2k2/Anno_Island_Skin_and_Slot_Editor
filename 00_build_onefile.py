@@ -39,6 +39,7 @@ HIDDEN_IMPORTS = (
     "app.backend.backend_patch_store",
     "app.config.config_colors",
     "app.config.config_gamedata",
+    "app.config.config_platform",
     "app.config.config_rd3d",
     "app.config.config_slot",
     "app.database.database_props",
@@ -84,6 +85,7 @@ EXCLUDED_MODULES = (
 # Paths
 # ============================================================
 BASE_DIR = Path(__file__).resolve().parent
+EXE_SUFFIX = ".exe" if os.name == "nt" else ""
 
 
 def read_version():
@@ -296,7 +298,8 @@ def build():
 
     if ONEFILE:
         command.append("--onefile")
-    if WINDOWED:
+    if WINDOWED and os.name == "nt":
+        # --windowed is Windows/macOS only; on Linux it would just warn.
         command.append("--windowed")
 
     if ICON_FILE:
@@ -323,7 +326,7 @@ def build():
 
 
 def show_result():
-    exe_path = DIST_DIR / f"{APP_NAME}.exe"
+    exe_path = DIST_DIR / f"{APP_NAME}{EXE_SUFFIX}"
 
     print_header("BUILD SUCCESSFUL")
     if exe_path.is_file():
