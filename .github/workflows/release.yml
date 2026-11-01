@@ -13,10 +13,9 @@ permissions:
 
 env:
   APP_BASENAME: Anno_Island_Skin_and_Slot_Editor
-  # Upstream sources for the Linux helper tools (built from source because
-  # upstream ships Windows .exe files only). Adjust refs/URLs if needed.
-  FILEDBREADER_REPO: https://github.com/anno-mods/FileDBReader.git
-  FILEDBREADER_REF: master
+  # FileDBReader: the official Linux build of the LATEST upstream release is used.
+  FILEDBREADER_LINUX_URL: https://github.com/anno-mods/FileDBReader/releases/latest/download/FileDBReader-Linux.zip
+  # RdaConsole has no Linux release upstream, so it is built from source.
   RDACONSOLE_REPO: https://github.com/anno-mods/RdaConsole.git
   RDACONSOLE_REF: master
 
@@ -93,7 +92,7 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------
-  # Linux helper tools: FileDBReader + RdaConsole (self-contained linux-x64)
+  # Linux helper tools: FileDBReader (official latest) + RdaConsole (from source)
   # ------------------------------------------------------------------
   build-linux-tools:
     needs: meta
@@ -105,21 +104,22 @@ jobs:
             6.0.x
             8.0.x
 
-      - name: Build FileDBReader
+      - name: Download FileDBReader (latest official Linux release)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git clone --depth 1 --branch "$FILEDBREADER_REF" --recurse-submodules "$FILEDBREADER_REPO" src-fdb
-          csproj="$(find src-fdb -name FileDBReader.csproj | head -n1)"
-          test -n "$csproj" || { echo "FileDBReader.csproj not found"; exit 1; }
-          dotnet publish "$csproj" -c Release -r linux-x64 --self-contained true \
-            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
-            -p:DebugType=None -o out/FileDBReader
-          # FileDBReader needs its FileFormats folder next to the binary
-          fmt="$(find src-fdb -type d -name FileFormats | head -n1)"
-          if [ -n "$fmt" ] && [ ! -d out/FileDBReader/FileFormats ]; then
-            cp -r "$fmt" out/FileDBReader/FileFormats
-          fi
+          gh release view --repo anno-mods/FileDBReader --json tagName -q '"FileDBReader latest release: " + .tagName' || true
+          mkdir -p dl out/FileDBReader
+          curl -fsSL -o dl/FileDBReader-Linux.zip "$FILEDBREADER_LINUX_URL"
+          unzip -q dl/FileDBReader-Linux.zip -d dl/fdb
+          bin="$(find dl/fdb -type f -name FileDBReader | head -n1)"
+          test -n "$bin" || { echo "FileDBReader binary not found in zip"; find dl/fdb; exit 1; }
+          cp -r "$(dirname "$bin")"/. out/FileDBReader/
           chmod +x out/FileDBReader/FileDBReader
           ls -la out/FileDBReader
+          if ! ls out/FileDBReader | grep -qi 'libcoreclr'; then
+            echo "::warning::FileDBReader zip does not look self-contained; users may need the .NET runtime."
+          fi
 
       - name: Build RdaConsole
         run: |
