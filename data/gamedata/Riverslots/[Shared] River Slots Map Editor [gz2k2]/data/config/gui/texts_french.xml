@@ -1,0 +1,20 @@
+<ModOps>
+  <ModOp Type="add" Path="/TextExport/Texts">
+    <Text>
+      <GUID>2144000100</GUID>
+      <Text>Emplacement fluviale</Text>
+    </Text>
+    <Text>
+      <GUID>2144000101</GUID>
+      <Text>Emplacement fluviale</Text>
+    </Text>
+    <Text>
+      <GUID>2144000102</GUID>
+      <Text>Établissez une construction fluviale sur cet emplacement pour exploiter la puissance du courant impétueux.</Text>
+    </Text>
+    <Text>
+      <GUID>2144000103</GUID>
+      <Text>Établissez une construction fluviale sur cet emplacement pour exploiter la puissance du courant impétueux.</Text>
+    </Text>
+  </ModOp>
+</ModOps>

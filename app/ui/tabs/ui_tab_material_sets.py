@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 import tkinter as tk
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 from pathlib import Path
 from tkinter import filedialog, messagebox
 

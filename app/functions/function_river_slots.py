@@ -1,6 +1,7 @@
 """Specialized native RiverSlot placement methods extracted from function_island_slots."""
 
 from app.functions.function_island_slots import *  # noqa: F401,F403
+from app.config.config_slot import configure_personal_river_guids
 
 
 class RiverSlotEditingMixin:
@@ -10,30 +11,184 @@ class RiverSlotEditingMixin:
 
     # Additive Y correction in world-height units. Applied equally to RiverSlot,
     # Work Area, MapName positions and every transformed Bezier point.
-    RIVER_HEIGHT_OFFSET = 0.5
+    # Vertical correction for RiverSlot and Work Area.
+    RIVER_HEIGHT_OFFSET = 0.2
+
+    # Additional correction applied only to BezierPath points.
+    RIVER_PATH_HEIGHT_OFFSET = 0.0
+
+    # Minimum distance between an inner Bezier point and terrain. Endpoints are
+    # never raised, so both building connections remain exact.
+    RIVER_PATH_TERRAIN_CLEARANCE = 0.10
+
+    # Smoothstep produces almost level transitions at Slot and Work Area.
+    RIVER_PATH_SMOOTH_HEIGHT = True
+
+    def _personal_river_guids(self, *, show_error=True):
+        """Return the GUID pair selected under Expert Settings > Riverslots.
+
+        Integrated always uses the bundled GUID pair. Only Custom reads and
+        validates the user-provided GUID fields.
+        """
+        mode_var = getattr(self, "river_slot_mode_var", None)
+        mode = str(mode_var.get() if mode_var is not None else "Integrated").strip().casefold()
+        if mode != "custom":
+            primary, workarea = "2144000100", "2144000101"
+            configure_personal_river_guids(primary, workarea)
+            return primary, workarea
+
+        primary_var = getattr(self, "river_slot_guid_var", None)
+        workarea_var = getattr(self, "river_workarea_guid_var", None)
+        primary = str(primary_var.get() if primary_var is not None else "").strip()
+        workarea = str(workarea_var.get() if workarea_var is not None else "").strip()
+        reserved = (
+            {guid for family, definition in RIVER_GUID_FAMILIES.items()
+             if family != "personal"
+             for guid in (str(definition["primary"]), str(definition["workarea"]))}
+            | {str(guid) for guid in SINGLE_SLOT_GUIDS | MINE_SLOT_GUIDS}
+            | {str(MINE_WORKAREA_GUID), str(MINE_CAVE_GUID)}
+        )
+        error = None
+        if not primary or not workarea:
+            error = (
+                "River Slot GUID and Work Area GUID are required. Enter both "
+                "personal GUIDs under Settings > Expert Settings > Riverslots.")
+        elif not primary.isdigit() or int(primary) <= 0:
+            error = "River Slot GUID must be a positive numeric GUID."
+        elif not workarea.isdigit() or int(workarea) <= 0:
+            error = "Work Area GUID must be a positive numeric GUID."
+        elif primary == workarea:
+            error = "River Slot GUID and Work Area GUID must be different."
+        elif primary in reserved or workarea in reserved:
+            error = (
+                "The personal River Slot GUIDs must not reuse built-in River, "
+                "Mine, Clay, Oil or Gas slot GUIDs.")
+        if error:
+            if show_error:
+                messagebox.showerror(
+                    "RiverSlot GUIDs required", error,
+                    parent=getattr(self, "slot_map_window", None))
+            return None
+        configure_personal_river_guids(primary, workarea)
+        return primary, workarea
+
+    def _river_heightmap(self):
+        """Return cached (width, height, signed values) from Gamedata HeightMap."""
+        game_tree = getattr(self, "_island_slot_ram_game_tree", None)
+        if game_tree is None:
+            return None
+        root = game_tree.getroot()
+        root_id = id(root)
+        cached = getattr(self, "_river_heightmap_cache", None)
+        if cached is not None and cached[0] == root_id:
+            return cached[1]
+        result = None
+        for node in root.iter():
+            if tag(node) != "HeightMap":
+                continue
+            width_node = direct(node, "Width")
+            height_node = direct(node, "Height")
+            values_node = direct(node, "HeightMap")
+            if width_node is None or height_node is None or values_node is None:
+                continue
+            try:
+                width = int((width_node.text or "").strip())
+                height = int((height_node.text or "").strip())
+                raw_values = [int(value) for value in (values_node.text or "").split()]
+            except (TypeError, ValueError):
+                continue
+            if width <= 1 or height <= 1 or len(raw_values) != width * height:
+                continue
+            values = tuple(
+                value if value < 32768 else value - 65536
+                for value in raw_values)
+            result = (width, height, values)
+            break
+        self._river_heightmap_cache = (root_id, result)
+        return result
+
+    def _river_terrain_height(self, x, z, samples):
+        """Sample the Gamedata HeightMap; fall back to nearby object positions."""
+        heightmap = self._river_heightmap()
+        if heightmap is not None:
+            width, height, values = heightmap
+            grid_x = float(x) * 2.0
+            grid_z = float(z) * 2.0
+            if 0.0 <= grid_x <= width - 1 and 0.0 <= grid_z <= height - 1:
+                x0 = int(math.floor(grid_x))
+                z0 = int(math.floor(grid_z))
+                x1 = min(x0 + 1, width - 1)
+                z1 = min(z0 + 1, height - 1)
+                fx, fz = grid_x - x0, grid_z - z0
+                h00 = values[z0 * width + x0] / 128.0
+                h10 = values[z0 * width + x1] / 128.0
+                h01 = values[z1 * width + x0] / 128.0
+                h11 = values[z1 * width + x1] / 128.0
+                top = h00 + (h10 - h00) * fx
+                bottom = h01 + (h11 - h01) * fx
+                return top + (bottom - top) * fz
+        return estimate_nearby_height(x, z, samples)
 
     @staticmethod
-    def _island_slot_snap_river_target(entrance, target_x, target_z):
-        """Snap the second RiverSlot point to the nearest 90-degree world axis.
+    def _river_half_coordinate(value):
+        """Snap a world coordinate to the required n + 0.5 grid."""
+        return math.floor(float(value)) + 0.5
 
-        The dominant cursor delta chooses horizontal or vertical placement. The
-        target remains on the existing half-cell grid because the unchanged
-        coordinate comes from the already snapped entrance.
+    @staticmethod
+    def _river_geometry(entrance, work_position):
+        """Calculate native RiverSlot length, direction and real vector.
+
+        Length is the dominant-axis distance. Direction is derived from the
+        final positions after the mandatory one-tile Work Area offset. The
+        real vector/length remains available for Bezier transformation.
         """
-        entrance_x, _entrance_y, entrance_z = entrance
+        dx = work_position[0] - entrance[0]
+        dz = work_position[2] - entrance[2]
+        length = max(abs(dx), abs(dz))
+        if abs(dx) >= abs(dz):
+            direction = math.pi / 2.0 if dx >= 0.0 else 3.0 * math.pi / 2.0
+        else:
+            direction = 0.0 if dz < 0.0 else math.pi
+        return {
+            "dx": dx, "dz": dz,
+            "length": length,
+            "real_length": math.hypot(dx, dz),
+            "real_angle": math.atan2(dz, dx),
+            "direction": direction,
+        }
+
+    @classmethod
+    def _island_slot_snap_river_target(cls, entrance, target_x, target_z):
+        """Create the TXT-defined Work Area position.
+
+        Both points stay on n + 0.5 coordinates. The dominant cursor axis
+        defines the main length, while the Work Area is exactly one tile off
+        that main axis. The one-tile offset rotates with the chosen direction.
+        """
+        entrance_x = cls._river_half_coordinate(entrance[0])
+        entrance_z = cls._river_half_coordinate(entrance[2])
+        target_x = cls._river_half_coordinate(target_x)
+        target_z = cls._river_half_coordinate(target_z)
         delta_x = target_x - entrance_x
         delta_z = target_z - entrance_z
         if abs(delta_x) >= abs(delta_z):
-            return target_x, entrance_z
-        return entrance_x, target_z
+            side = 1.0 if delta_x >= 0.0 else -1.0
+            return target_x, entrance_z + side
+        side = -1.0 if delta_z >= 0.0 else 1.0
+        return entrance_x + side, target_z
 
     def _island_slot_add_riverslot_at_event(self, event):
         """Start native 117741/117742 two-click placement."""
+        guids = self._personal_river_guids()
+        if guids is None:
+            return
+        primary_guid, workarea_guid = guids
         self._island_slot_cancel_mine_placement(silent=True)
         x, z = self._island_slot_world(event)
-        x, z = math.floor(x) + 0.5, math.floor(z) + 0.5
+        x = self._river_half_coordinate(x)
+        z = self._river_half_coordinate(z)
         samples, source = self._island_slot_height_samples()
-        y = estimate_nearby_height(x, z, samples)
+        y = self._river_terrain_height(x, z, samples)
         if y is None or y <= 0:
             messagebox.showerror(
                 "Add RiverSlot", "RiverSlot must be placed on emerged terrain.",
@@ -42,17 +197,18 @@ class RiverSlotEditingMixin:
         self._mine_placement = {
             "kind": "river", "name": "Riverslot",
             "entrance": (x, y, z), "samples": samples, "source": source,
+            "primary_guid": primary_guid, "workarea_guid": workarea_guid,
         }
         self.slot_map_allow_dot_movement_var.set(False)
         self._slot_map_dot_movement_changed()
         self.slot_map_canvas.focus_set()
         self.status_var.set(
-            f"RiverSlot 117741 selected at X/Z {x:g} / {z:g}. "
-            "Left-click to place Work Area 117742; right-click or Esc to cancel.")
+            f"RiverSlot {primary_guid} selected at X/Z {x:g} / {z:g}. "
+            f"Left-click to place Work Area {workarea_guid}; right-click or Esc to cancel.")
         self._island_slot_draw_mine_preview(None)
 
     def _island_slot_commit_native_river_pair(
-            self, entrance, work_position, samples, source, status):
+            self, placement, entrance, work_position, samples, source, status):
         go, mo, gp, mp = self._island_slot_sources()
         if self._island_slot_ram_game_tree is None or self._island_slot_ram_map_tree is None:
             self._island_slot_ram_game_tree = self._slot_parse_xml(
@@ -63,8 +219,16 @@ class RiverSlotEditingMixin:
         map_tree = deepcopy(self._island_slot_ram_map_tree)
         game_root, map_root = game_tree.getroot(), map_tree.getroot()
         container = game_object_container(game_root)
+        primary_guid = str(placement.get("primary_guid", "")).strip()
+        workarea_guid = str(placement.get("workarea_guid", "")).strip()
+        current_guids = self._personal_river_guids()
+        if current_guids is None or current_guids != (primary_guid, workarea_guid):
+            raise ValueError(
+                "The personal RiverSlot GUID settings changed during placement. "
+                "Cancel and place the RiverSlot again.")
         river, workarea = river_pair()
-        set_text(workarea, "guid", "117742")
+        set_text(river, "guid", primary_guid)
+        set_text(workarea, "guid", workarea_guid)
         used = all_ids(map_root, game_root)
         river_id, work_id = allocate_verified_id_family(
             map_root, game_root, used, 2)
@@ -80,16 +244,12 @@ class RiverSlotEditingMixin:
             work_position[2],
         )
 
-        dx = work_position[0] - entrance[0]
-        dz = work_position[2] - entrance[2]
-        if abs(dx) >= abs(dz):
-            direction = math.pi / 2.0 if dx >= 0 else 3.0 * math.pi / 2.0
-        else:
-            direction = 0.0 if dz < 0 else math.pi
+        geometry = self._river_geometry(entrance, work_position)
+        direction = geometry["direction"]
 
         for node, oid, guid, position in (
-                (river, river_id, "117741", entrance),
-                (workarea, work_id, "117742", work_position)):
+                (river, river_id, primary_guid, entrance),
+                (workarea, work_id, workarea_guid, work_position)):
             set_text(node, "ID", oid)
             set_text(node, "ObjectFolderID", folder)
             set_text(node, "Position", format_position(position))
@@ -105,69 +265,53 @@ class RiverSlotEditingMixin:
             orientation.text = " ".join(game_number(v) for v in (
                 0.0, -math.sin(half), 0.0, math.cos(half)))
 
-        # Preserve the complete native 117742 BezierPath. Map its original
-        # RiverSlot -> Work Area frame onto the two user-selected points using a
-        # rotation plus uniform length scale; then resolve path Y from terrain.
+        # Custom River Work Areas use a local two-point BezierPath. The path
+        # origin is the Work Area connection (0/0/0); its second point runs
+        # back toward the RiverSlot. This matches the working 1999002330/2331
+        # pair and avoids writing absolute world coordinates into BezierCurve.
         bezier = direct(workarea, "BezierPath")
-        curve = direct(direct(bezier, "Path"), "BezierCurve") if bezier is not None else None
+        path = direct(bezier, "Path") if bezier is not None else None
+        curve = direct(path, "BezierCurve") if path is not None else None
         if curve is None or len(curve) != 2:
-            raise ValueError("Native River Work Area template must have a two-point BezierPath.")
-        template_river, template_work = river_pair()
-        source_slot = parse_position(text(template_river, "Position"))
-        source_work = parse_position(text(template_work, "Position"))
-        source_dx = source_work[0] - source_slot[0]
-        source_dz = source_work[2] - source_slot[2]
-        target_dx = work_position[0] - entrance[0]
-        target_dz = work_position[2] - entrance[2]
-        source_length = math.hypot(source_dx, source_dz)
-        target_length = math.hypot(target_dx, target_dz)
-        if source_length <= 0 or target_length <= 0:
-            raise ValueError("RiverSlot and Work Area must not occupy the same position.")
-        source_angle = math.atan2(source_dz, source_dx)
-        target_angle = math.atan2(target_dz, target_dx)
-        rotation = target_angle - source_angle
-        cosine, sine = math.cos(rotation), math.sin(rotation)
-        scale = target_length / source_length
+            raise ValueError(
+                "Native River Work Area template must have a two-point BezierPath.")
 
-        def transform_xz(vector_x, vector_z, apply_scale=True):
-            factor = scale if apply_scale else 1.0
-            x = vector_x * factor
-            z = vector_z * factor
-            return (x * cosine - z * sine, x * sine + z * cosine)
+        main_length = geometry["length"]
+        path_length = max(0.0, main_length - 6.0 + 0.32393)
+        height_delta = entrance[1] - work_position[1]
 
-        transformed_points = []
-        for item in curve:
-            point = parse_position(text(item, "p"))
-            relative_x = point[0] - source_slot[0]
-            relative_z = point[2] - source_slot[2]
-            offset_x, offset_z = transform_xz(relative_x, relative_z)
-            point_x = entrance[0] + offset_x
-            point_z = entrance[2] + offset_z
-            point_y = estimate_nearby_height(point_x, point_z, samples)
-            if point_y is None or point_y <= 0:
-                unshifted_entrance_y = entrance[1] - self.RIVER_HEIGHT_OFFSET
-                point_y = unshifted_entrance_y + (
-                    work_position[1] - entrance[1]) * min(
-                        1.0, max(0.0, math.hypot(offset_x, offset_z) / target_length))
-            point_y += self.RIVER_HEIGHT_OFFSET
-            transformed_point = (point_x, point_y, point_z)
-            direct(item, "p").text = format_position(transformed_point)
-            transformed_points.append(transformed_point)
-            for tangent_name in ("i", "o"):
-                tangent = parse_position(text(item, tangent_name))
-                tangent_x, tangent_z = transform_xz(tangent[0], tangent[2])
-                direct(item, tangent_name).text = format_position(
-                    (tangent_x, tangent[1] * scale, tangent_z))
-        path = direct(bezier, "Path")
-        direct(path, "Minimum").text = format_position(tuple(
-            min(point[axis] for point in transformed_points) for axis in range(3)))
-        direct(path, "Maximum").text = format_position(tuple(
-            max(point[axis] for point in transformed_points) for axis in range(3)))
+        # Direction uses the object's cardinal orientation. The local path end
+        # points in the opposite direction, from Work Area back to RiverSlot.
+        endpoint = (
+            -math.sin(direction) * path_length,
+            height_delta,
+            math.cos(direction) * path_length,
+        )
+        endpoint = tuple(0.0 if abs(value) < 0.0000001 else value
+                         for value in endpoint)
+        origin = (0.0, 0.0, 0.0)
+
+        # These tangents are taken from the verified custom 1999002331 Work
+        # Area. They describe the local connector profile and must not be
+        # rotated into world coordinates or scaled with the object distance.
+        incoming = (-0.39575043, -0.014931966, 0.0014282227)
+        outgoing = (0.39575043, 0.014931966, -0.0014282227)
+        points = list(curve)
+        for item, point in zip(points, (origin, endpoint)):
+            direct(item, "p").text = format_position(point)
+            direct(item, "i").text = format_position(incoming)
+            direct(item, "o").text = format_position(outgoing)
+
+        direct(path, "TangentScale").text = game_number(0.3)
+        # The custom format stores the two anchors directly rather than
+        # component-wise mathematical bounds.
+        direct(path, "Minimum").text = format_position(origin)
+        direct(path, "Maximum").text = format_position(endpoint)
 
         append_pretty(container, river)
         append_pretty(container, workarea)
-        append_map_entry(map_root, "4", river_id, "117741", format_position(entrance))
-        append_map_entry(map_root, "3", work_id, "117742", format_position(work_position))
+        append_map_entry(map_root, "4", river_id, primary_guid, format_position(entrance))
+        append_map_entry(map_root, "3", work_id, workarea_guid, format_position(work_position))
         containers = mine_object_group_containers(game_root)
         used_group_names = {
             (child.text or "").strip()
@@ -193,6 +337,6 @@ class RiverSlotEditingMixin:
         self._island_slot_ram_map_tree = map_tree
         StatusWindowTemplate.update(status, fraction=1)
         self.status_var.set(
-            f"Added native RiverSlot 117741/117742 | ID family: "
+            f"Added RiverSlot {primary_guid}/{workarea_guid} | ID family: "
             f"{river_id}, {work_id} | Group: {group_name} | Height: {source}")
         self._refresh_open_slot_map()

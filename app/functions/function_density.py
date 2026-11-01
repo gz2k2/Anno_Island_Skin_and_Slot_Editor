@@ -4,8 +4,8 @@ import math
 import random
 from pathlib import Path
 from collections import defaultdict
-import app.backend.xml_backend as ET
-from app.backend.patch_store import PATCH_STORE
+import app.backend.backend_xml as ET
+from app.backend.backend_patch_store import PATCH_STORE
 
 
 def local_tag(node):

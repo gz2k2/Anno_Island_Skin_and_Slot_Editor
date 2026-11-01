@@ -13,7 +13,7 @@ from pathlib import Path
 import tempfile
 import threading
 
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 from app.functions.function_xml_repair import parse_xml_tolerant
 
 SCHEMA = 1
@@ -71,9 +71,6 @@ def _atomic_xml(path, tree):
     temporary = Path(name)
     try:
         tree.write(temporary, encoding="utf-8", xml_declaration=False, short_empty_elements=True)
-        # The generated file may intentionally contain parser-hostile source
-        # bytes restored from the immutable original. Validate through the same
-        # lossless tolerant parser used to load the source.
         parse_xml_tolerant(temporary)
         os.replace(temporary, path)
     finally:
@@ -224,6 +221,70 @@ def apply_gamedata_regional(tree, payload):
         node = ET.Element(namespace + "VegetationPropSetName")
         node.text = values["VegetationPropSetName"]
         session.append(node)
+
+def apply_rd3d_settings(tree, payload):
+    """Apply settings and insert a missing Terrain/MaterialSetFileName cleanly."""
+    values = {str(key): str(value) for key, value in payload.get("values", {}).items()}
+    material_value = values.pop("MaterialSetFileName", None)
+    if values:
+        apply_tag_values(tree, {"values": values})
+    if material_value is None:
+        return
+
+    terrain_nodes = [node for node in tree.getroot().iter()
+                     if local_tag(node) == "Terrain"]
+    if len(terrain_nodes) != 1:
+        raise ValueError(
+            f"Expected exactly one Terrain container, found {len(terrain_nodes)}.")
+    terrain = terrain_nodes[0]
+    existing = [node for node in terrain
+                if local_tag(node) == "MaterialSetFileName"]
+    if len(existing) > 1:
+        raise ValueError(
+            "Terrain contains more than one MaterialSetFileName element.")
+    if existing:
+        existing[0].text = material_value
+        return
+
+    namespace = ""
+    if isinstance(terrain.tag, str) and terrain.tag.startswith("{"):
+        namespace = terrain.tag.split("}", 1)[0] + "}"
+    material = ET.Element(namespace + "MaterialSetFileName")
+    material.text = material_value
+    children = list(terrain)
+
+    levels_index = next(
+        (index for index, node in enumerate(children)
+         if local_tag(node) == "Levels"), None)
+    if levels_index is not None:
+        anchor = children[levels_index]
+        # Preserve the existing indentation before the following element and
+        # assign it as the tail of the inserted node. This guarantees a line
+        # break after </MaterialSetFileName> instead of joining MaterialIDs2.
+        indentation = anchor.tail or "\n    "
+        material.tail = indentation
+        anchor.tail = indentation
+        terrain.insert(levels_index + 1, material)
+        return
+
+    material_ids_index = next(
+        (index for index, node in enumerate(children)
+         if local_tag(node) == "MaterialIDs2"), None)
+    if material_ids_index is not None:
+        following = children[material_ids_index]
+        indentation = (
+            children[material_ids_index - 1].tail
+            if material_ids_index > 0
+            else following.tail
+        ) or "\n    "
+        material.tail = indentation
+        terrain.insert(material_ids_index, material)
+        return
+
+    indentation = (children[-1].tail if children else None) or "\n    "
+    material.tail = indentation
+    terrain.append(material)
+
 
 def apply_indexed_children(tree, payload):
     parent_tag = str(payload["parent_tag"])
@@ -380,6 +441,6 @@ PATCH_STORE.register("a7minfo", "a7minfo_slots", apply_a7minfo_slots)
 PATCH_STORE.register("gamedata", "gamedata_objects", apply_guid_map)
 PATCH_STORE.register("mapname", "gamedata_objects", apply_guid_map)
 PATCH_STORE.register("gamedata", "gamedata_regional", apply_gamedata_regional)
-PATCH_STORE.register("rd3d", "rd3d_settings", apply_tag_values)
+PATCH_STORE.register("rd3d", "rd3d_settings", apply_rd3d_settings)
 PATCH_STORE.register("rd3d", "rd3d_object_paths", apply_indexed_children)
 PATCH_STORE.register("rd3d", "rd3d_instances", apply_subtree)

@@ -6,7 +6,7 @@ priority; this library is the fallback when the requested slot GUID is absent.
 """
 from __future__ import annotations
 import copy
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 SLOT_LIBRARY_VERSION = 2
 
 RIVER_GUID_FAMILIES = {
@@ -24,6 +24,26 @@ RIVER_GUID_ROLE = {
     for role, guid in (("primary", definition["primary"]),
                        ("workarea", definition["workarea"]))
 }
+
+
+def configure_personal_river_guids(primary_guid="", workarea_guid=""):
+    """Register the optional personal RiverSlot GUID family at runtime."""
+    primary_guid = str(primary_guid or "").strip()
+    workarea_guid = str(workarea_guid or "").strip()
+    RIVER_GUID_FAMILIES.pop("personal", None)
+    for guid, value in list(RIVER_GUID_ROLE.items()):
+        if value[0] == "personal":
+            RIVER_GUID_ROLE.pop(guid, None)
+    if not primary_guid or not workarea_guid:
+        return
+    definition = {
+        "primary": primary_guid, "workarea": workarea_guid,
+        "primary_group": "4", "workarea_group": "3",
+        "folder_pairing": True,
+    }
+    RIVER_GUID_FAMILIES["personal"] = definition
+    RIVER_GUID_ROLE[primary_guid] = ("personal", "primary")
+    RIVER_GUID_ROLE[workarea_guid] = ("personal", "workarea")
 MINE_MASTER_GUID = "1000029"
 MINE_WORKAREA_GUID = "1000253"
 MINE_CAVE_GUID = "100419"

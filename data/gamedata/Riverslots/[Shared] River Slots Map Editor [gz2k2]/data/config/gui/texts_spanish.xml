@@ -1,0 +1,20 @@
+<ModOps>
+  <ModOp Type="add" Path="/TextExport/Texts">
+    <Text>
+      <GUID>2144000100</GUID>
+      <Text>Tragaperras River</Text>
+    </Text>
+    <Text>
+      <GUID>2144000101</GUID>
+      <Text>Tragaperras River</Text>
+    </Text>
+    <Text>
+      <GUID>2144000102</GUID>
+      <Text>Establezca un edificio fluvial en este sitio para utilizar la energía de la corriente que se precipita.</Text>
+    </Text>
+    <Text>
+      <GUID>2144000103</GUID>
+      <Text>Establezca un edificio fluvial en este sitio para utilizar la energía de la corriente que se precipita.</Text>
+    </Text>
+  </ModOp>
+</ModOps>

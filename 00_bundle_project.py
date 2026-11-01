@@ -19,7 +19,7 @@ EXTENSIONS = {
     # ".json",
     # ".ini",
     # ".config",
-    # ".md",
+    ".md",
     ".txt",
     ".yml",
 }

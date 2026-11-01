@@ -26,8 +26,8 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
-import app.backend.xml_backend as ET
-from app.backend.patch_store import PATCH_STORE
+import app.backend.backend_xml as ET
+from app.backend.backend_patch_store import PATCH_STORE
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
@@ -681,15 +681,24 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
     def _object_configuration_picker_color(self, category):
         return self._object_configuration_color_for_category(category)
 
-    def _open_object_configuration_category_picker(self, target_var, owner):
+    def _open_object_configuration_category_picker(
+            self, target_var, owner, from_category=""):
         popup_owner = owner or self
+        title = f"Replace from {from_category} to ..." if from_category else "Select Replace-To Category"
         picker = CategoryPickerTemplate.create(
             popup_owner,
             categories=self._object_configuration_database_categories(),
             selected=target_var.get().strip(),
             color_provider=self._object_configuration_picker_color,
             on_select=target_var.set,
-            title="Select Replace-To Category",
+            title=title,
+            initial_filters=getattr(self, "_object_mass_replace_picker_filters", None),
+            on_filters_changed=self._remember_object_mass_replace_picker_filters,
+            heading_category=from_category,
+            heading_category_color=(
+                self._object_configuration_color_for_category(from_category)
+                if from_category else None
+            ),
         )
         try:
             owner_window = popup_owner.winfo_toplevel()
@@ -699,6 +708,13 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             PopupTemplate.request_focus(picker, delay_ms=100)
         except (tk.TclError, AttributeError):
             pass
+
+    def _remember_object_mass_replace_picker_filters(self, filters):
+        """Remember the last clicked Region and Group filter buttons."""
+        self._object_mass_replace_picker_filters = {
+            "region": str(filters.get("region", CategoryPickerTemplate.FILTER_ALL)),
+            "group": str(filters.get("group", CategoryPickerTemplate.FILTER_ALL)),
+        }
 
     def _object_configuration_database_paths(self, category):
         paths, seen = [], set()
@@ -736,7 +752,11 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             PopupTemplate.close_window(current)
         built = PopupTemplate.create_window(
             owner or self,
-            title=f"Objects Table {number} - Mass Replace",
+            title=(
+                "Objects Table (rd3d) - Mass Replace"
+                if number == 1
+                else "Objects Table (tmc) - Mass Replace"
+            ),
             heading="Mass Replace Categories",
             geometry="980x650",
             min_size=(760, 440),
@@ -782,7 +802,8 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             entry.grid(row=row_index, column=2, padx=8, pady=5, sticky="ew")
             ctk.CTkButton(
                 scroll, text="Select...", width=100,
-                command=lambda var=target: self._open_object_configuration_category_picker(var, popup),
+                command=lambda var=target, source=category: self._open_object_configuration_category_picker(
+                    var, popup, source),
             ).grid(row=row_index, column=3, padx=(8, 8), pady=5)
             mappings.append((category, target))
         self._object_mass_replace_mappings = mappings

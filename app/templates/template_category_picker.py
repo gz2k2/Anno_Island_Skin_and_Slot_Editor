@@ -27,7 +27,10 @@ class CategoryPickerTemplate:
         return first if first in {"Pebbles", "Rocks", "Bushes", "Flowers", "Grass", "Tree", "Deco"} else "Other"
 
     @classmethod
-    def create(cls, owner, *, categories, selected="", color_provider=None, on_select=None, title="Select Replace-To Category"):
+    def create(cls, owner, *, categories, selected="", color_provider=None,
+               on_select=None, title="Select Replace-To Category",
+               initial_filters=None, on_filters_changed=None,
+               heading_category="", heading_category_color=None):
         rows = []
         for item in categories:
             if isinstance(item, dict):
@@ -46,13 +49,39 @@ class CategoryPickerTemplate:
                 rows.append((category, variations, regions, display_category, display_regions))
         rows.sort(key=lambda x: x[0].casefold())
 
-        state = {"window": None, "region": cls.FILTER_ALL, "group": cls.FILTER_ALL, "rows": rows}
+        initial_filters = dict(initial_filters or {})
+        initial_region = str(initial_filters.get("region", cls.FILTER_ALL))
+        initial_group = str(initial_filters.get("group", cls.FILTER_ALL))
+        state = {
+            "window": None, "region": initial_region, "group": initial_group,
+            "rows": rows, "on_filters_changed": on_filters_changed,
+        }
         built = PopupTemplate.create_window(
             owner, title=title, heading=title, geometry=cls.GEOMETRY,
             min_size=cls.MIN_SIZE, close_command=lambda: cls._close(state),
         )
         window = built["window"]
         state["window"] = window
+        header = built.get("header")
+        if heading_category and header is not None:
+            for widget in header.winfo_children():
+                widget.destroy()
+            heading_font = ctk.CTkFont(
+                size=PopupTemplate.HEADING_FONT_SIZE,
+                weight=PopupTemplate.HEADING_FONT_WEIGHT,
+            )
+            heading_row = ctk.CTkFrame(header, fg_color="transparent")
+            heading_row.grid(row=0, column=0, sticky="w")
+            ctk.CTkLabel(
+                heading_row, text="Replace from ", font=heading_font,
+            ).pack(side="left")
+            ctk.CTkLabel(
+                heading_row, text=heading_category, font=heading_font,
+                text_color=heading_category_color,
+            ).pack(side="left")
+            ctk.CTkLabel(
+                heading_row, text=" to ...", font=heading_font,
+            ).pack(side="left")
         window.grid_columnconfigure(0, weight=1)
         window.grid_rowconfigure(5, weight=1)
 
@@ -122,7 +151,12 @@ class CategoryPickerTemplate:
         state["on_select"] = on_select
         state["selected"] = selected
         search_var.trace_add("write", lambda *_: cls._render(state))
-        cls._set_group(state, cls.FILTER_ALL)
+        if state["region"] not in state["region_buttons"]:
+            state["region"] = cls.FILTER_ALL
+        if state["group"] not in state["group_buttons"]:
+            state["group"] = cls.FILTER_ALL
+        cls._set_region(state, state["region"])
+        cls._set_group(state, state["group"])
         PopupTemplate.request_focus(window, widget=search, delay_ms=50)
         return window
 
@@ -135,6 +169,9 @@ class CategoryPickerTemplate:
                 fg_color=("#1f6aa5" if active else PopupTemplate.BUTTON_FG_COLOR),
                 hover_color=("#144870" if active else PopupTemplate.BUTTON_HOVER_COLOR),
             )
+        callback = state.get("on_filters_changed")
+        if callback is not None:
+            callback({"region": state["region"], "group": state["group"]})
         cls._render(state)
 
     @classmethod
@@ -146,6 +183,9 @@ class CategoryPickerTemplate:
                 fg_color=("#1f6aa5" if active else PopupTemplate.BUTTON_FG_COLOR),
                 hover_color=("#144870" if active else PopupTemplate.BUTTON_HOVER_COLOR),
             )
+        callback = state.get("on_filters_changed")
+        if callback is not None:
+            callback({"region": state["region"], "group": state["group"]})
         cls._render(state)
 
     @staticmethod

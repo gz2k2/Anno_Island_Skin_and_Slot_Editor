@@ -1,0 +1,113 @@
+<ModOps>
+  <Group>
+    <ModOp Type="addNextSibling" GUID="117741">
+      <Asset>
+        <BaseAssetGUID>117741</BaseAssetGUID>
+        <Values>
+          <Standard>
+            <GUID>2144000100</GUID>
+            <Name>Shared River Slot</Name>
+            <IconFilename>data/ui/2kimages/main/3dicons/icon_rich_sea_2.png</IconFilename>
+            <InfoDescription>2144000102</InfoDescription>
+          </Standard>
+          <Blocking />
+          <Object>
+            <Variations>
+              <Item>
+                <Filename>data/dlc06/graphics/landscape/terrain/mining_blockers/mining_blocker_colony02/mining_blocker_colony02_main_left.cfg</Filename>
+              </Item>
+              <Item>
+                <Filename>data/dlc06/graphics/landscape/terrain/mining_blockers/mining_blocker_colony02/mining_blocker_colony02_main_right.cfg</Filename>
+              </Item>
+            </Variations>
+            <AssignDefaultParticipant>1</AssignDefaultParticipant>
+          </Object>
+          <Mesh />
+          <Slot />
+          <Selection>
+            <GUIType>Generic</GUIType>
+            <DestructSelectable>0</DestructSelectable>
+            <OnSelection>
+              <IsBaseAutoCreateAsset>1</IsBaseAutoCreateAsset>
+              <Values>
+                <ActionList />
+              </Values>
+            </OnSelection>
+          </Selection>
+          <Text />
+          <MinimapToken />
+          <RandomMapObject />
+          <Building>
+            <AssociatedRegions>Meta;Moderate;Colony01;Arctic;Africa</AssociatedRegions>
+          </Building>
+          <SoundEmitter />
+          <Infolayer />
+          <QuestObject />
+          <Constructable />
+        </Values>
+      </Asset>
+      <Asset>
+        <Template>Text</Template>
+        <Values>
+          <Standard>
+            <GUID>2144000102</GUID>
+            <Name>Shared River Slot Description</Name>
+          </Standard>
+          <Text>
+            <LocaText>
+              <English>
+                <Text>Establish a river building on this site to utilise the power of the rushing current.</Text>
+                <Status>Exported</Status>
+              </English>
+            </LocaText>
+            <LineID>14456</LineID>
+          </Text>
+        </Values>
+      </Asset>
+    </ModOp>
+    <ModOp Type="addNextSibling" GUID="117742">
+      <Asset>
+        <BaseAssetGUID>117742</BaseAssetGUID>
+        <Values>
+          <Standard>
+            <GUID>2144000101</GUID>
+            <Name>Shared River Slot Work Area</Name>
+            <IconFilename>data/ui/2kimages/main/3dicons/icon_rich_sea_2.png</IconFilename>
+            <InfoDescription>2144000103</InfoDescription>
+          </Standard>
+          <Object />
+          <Mesh />
+          <Slot />
+          <Selection />
+          <Text />
+          <MinimapToken />
+          <Building>
+            <Movable>0</Movable>
+            <AssociatedRegions>Meta;Moderate;Colony01;Arctic;Africa</AssociatedRegions>
+          </Building>
+          <BezierPath />
+          <Blocking />
+        </Values>
+      </Asset>
+      <Asset>
+        <Template>Text</Template>
+        <Values>
+          <Standard>
+            <GUID>2144000103</GUID>
+            <Name>Shared River Slot Description</Name>
+          </Standard>
+          <Text>
+            <LocaText>
+              <English>
+                <Text>Establish a river building on this site to utilise the power of the rushing current.</Text>
+                <Status>Exported</Status>
+              </English>
+            </LocaText>
+            <LineID>14456</LineID>
+          </Text>
+        </Values>
+      </Asset>
+    </ModOp>
+  </Group>
+
+</ModOps>

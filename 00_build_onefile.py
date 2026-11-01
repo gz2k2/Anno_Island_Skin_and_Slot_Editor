@@ -24,6 +24,7 @@ ICON_FILE = None
 DATA_DIRS = (
     "data/material_sets",
     "data/xml",
+    "data/gamedata",
 )
 DATA_FILES = (
     VERSION_FILE,
@@ -34,8 +35,8 @@ DATA_FILES = (
 HIDDEN_IMPORTS = (
     "app.main",
     "app.ui.ui",
-    "app.backend.xml_backend",
-    "app.backend.patch_store",
+    "app.backend.backend_xml",
+    "app.backend.backend_patch_store",
     "app.config.config_colors",
     "app.config.config_gamedata",
     "app.config.config_rd3d",

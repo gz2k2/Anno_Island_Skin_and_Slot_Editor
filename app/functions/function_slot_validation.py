@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import math
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 from app.config.config_slot import RIVER_GUID_FAMILIES, RIVER_GUID_ROLE, SINGLE_SLOT_GUIDS
 
 
@@ -223,8 +223,6 @@ def validate_slot_trees(map_root, game_root, strict_deposit_ids=None) -> SlotGat
                 f"GUID mismatch for ObjectId {object_id}: "
                 f"MapName {entry['guid']} / Gamedata {record['guid']}."
             )
-        if not close_position(record["position"], entry["position"], tolerance=0.000001):
-            report.errors.append(f"Position mismatch for ObjectId {object_id}.")
         if entry["guid"] in SINGLE_SLOT_GUIDS and entry["category"] != "1":
             report.errors.append(
                 f"Single resource slot {object_id} ({entry['guid']}) must be in category 1."

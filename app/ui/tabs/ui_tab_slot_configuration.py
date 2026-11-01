@@ -7,9 +7,9 @@ import re
 import tkinter as tk
 import threading
 from tkinter import messagebox
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 import customtkinter as ctk
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageTk
 
 from app.templates.template_table import TemplateTable, TableColumn
 from app.templates.template_map_view import MapViewTemplate
@@ -17,11 +17,13 @@ from app.templates.template_popup import PopupTemplate
 from app.templates.template_statuswindow import StatusWindowTemplate
 from app.templates.template_treeview import TreeviewTemplate
 from app.config.config_colors import TYPE_CATEGORY_COLOR_FAMILIES, TYPE_CATEGORY_COLORS, DEFAULT_TYPE_COLOR
+from app.database.database_guid import GUID_LABELS
 from app.config.config_slot import (
     RIVER_GUID_FAMILIES,
     RIVER_GUID_ROLE,
     MINE_SLOT_GUIDS,
     MINE_WORKAREA_GUID,
+    SINGLE_SLOT_GUIDS,
 )
 from app.functions.function_island_slots import (
     IslandSlotEditingMixin,
@@ -61,6 +63,14 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_points = []
         self.slot_map_screen_points = []
         self.slot_map_river_pairs = []
+        self.slot_map_river_curves = []
+        self.slot_map_show_river_area_var = tk.BooleanVar(value=False)
+        self.slot_map_show_height_map_var = tk.BooleanVar(value=False)
+        self.slot_map_height_overlay_source = None
+        self.slot_map_height_overlay_tk = None
+        self.slot_map_height_overlay_cache = {}
+        self.slot_map_height_overlay_signature = None
+        self.slot_map_gamedata_heightmap = None
         self.slot_map_orientation_directions = {}
         self.slot_map_guid_colors = {}
         self.slot_map_guid_visible = {}
@@ -104,6 +114,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.combined_slot_tree = None
         self.combined_slot_editor_id = tk.StringVar()
         self.combined_slot_editor_guid = tk.StringVar()
+        self.combined_slot_editor_guid_selection = tk.StringVar(value="Custom")
         self.combined_slot_editor_x = tk.StringVar()
         self.combined_slot_editor_y = tk.StringVar()
         self.combined_slot_editor_z = tk.StringVar()
@@ -433,6 +444,86 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         river_pairs = []
         paired_ids = set()
         game_records = list(game_entries.values())
+
+        # Cache the authoritative terrain grid from Gamedata. Values are UInt16
+        # on disk, interpreted as signed Int16 and scaled by 1/128 world units.
+        self.slot_map_gamedata_heightmap = None
+        for heightmap_node in game_root.iter():
+            if heightmap_node.tag.rsplit("}", 1)[-1] != "HeightMap":
+                continue
+            children = {
+                child.tag.rsplit("}", 1)[-1]: child
+                for child in list(heightmap_node) if isinstance(child.tag, str)
+            }
+            width_node = children.get("Width")
+            height_node = children.get("Height")
+            values_node = children.get("HeightMap")
+            if width_node is None or height_node is None or values_node is None:
+                continue
+            try:
+                grid_width = int((width_node.text or "").strip())
+                grid_height = int((height_node.text or "").strip())
+                raw_values = [int(value) for value in (values_node.text or "").split()]
+            except (TypeError, ValueError):
+                continue
+            if grid_width <= 1 or grid_height <= 1 or len(raw_values) != grid_width * grid_height:
+                continue
+            signed_values = tuple(
+                value if value < 32768 else value - 65536
+                for value in raw_values
+            )
+            self.slot_map_gamedata_heightmap = (grid_width, grid_height, signed_values)
+            break
+
+        # Read the actual river course from the BezierPath stored on River
+        # objects. A control point consists of world position p plus incoming
+        # and outgoing tangent vectors i/o. These data describe the visible
+        # river course; Slot/Work-Area positions are not used for this overlay.
+        river_curves = []
+        for record in game_records:
+            if record["guid"] not in RIVER_GUID_ROLE and record["guid"] != "1001608":
+                continue
+            for path_node in record["node"].iter():
+                if path_node.tag.rsplit("}", 1)[-1] != "Path":
+                    continue
+                tangent_scale = 1.0
+                curve = None
+                for path_child in list(path_node):
+                    local_tag = path_child.tag.rsplit("}", 1)[-1] if isinstance(path_child.tag, str) else ""
+                    if local_tag == "TangentScale":
+                        try:
+                            tangent_scale = float((path_child.text or "1").strip().replace(",", "."))
+                        except ValueError:
+                            tangent_scale = 1.0
+                    elif local_tag == "BezierCurve":
+                        curve = path_child
+                if curve is None:
+                    continue
+                points = []
+                for control in list(curve):
+                    values = {}
+                    for child in list(control):
+                        local_tag = child.tag.rsplit("}", 1)[-1] if isinstance(child.tag, str) else ""
+                        if local_tag in {"p", "i", "o"}:
+                            parsed = self._slot_map_parse_position((child.text or "").strip())
+                            if parsed is not None:
+                                values[local_tag] = parsed
+                        elif local_tag == "w":
+                            try:
+                                values["w"] = float((child.text or "0").strip().replace(",", "."))
+                            except ValueError:
+                                pass
+                    if "p" in values:
+                        points.append((
+                            values["p"],
+                            values.get("i", (0.0, 0.0, 0.0)),
+                            values.get("o", (0.0, 0.0, 0.0)),
+                            max(0.0, values.get("w", 0.0)),
+                        ))
+                if len(points) >= 2:
+                    river_curves.append((points, tangent_scale))
+        self.slot_map_river_curves = river_curves
+
         for family_name, family in RIVER_GUID_FAMILIES.items():
             primaries = [r for r in game_records if r["guid"] == family["primary"]]
             workareas = [r for r in game_records if r["guid"] == family["workarea"]]
@@ -490,7 +581,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         # Keep it by ObjectId so the Slot Map can render a facing arrow without
         # changing the existing point tuple.
         orientation_directions = {}
-        directional_guids = {"117741", "1000029", "614", "116037"}
+        directional_guids = {guid for guid, (_family, role) in RIVER_GUID_ROLE.items() if role == "primary"} | {"1000029", "614", "116037"}
         for record in game_records:
             if record["guid"] not in directional_guids:
                 continue
@@ -583,16 +674,24 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         header = built["header"]
         maximize = built["maximize_button"]
         if maximize is not None:
-            maximize.grid_configure(column=6, padx=(8, 0))
+            maximize.grid_configure(column=8, padx=(8, 0))
+        ctk.CTkCheckBox(
+            header, text="River area", variable=self.slot_map_show_river_area_var,
+            command=self._slot_map_schedule_redraw, width=105,
+        ).grid(row=0, column=2, padx=(12, 0), sticky="e")
+        ctk.CTkCheckBox(
+            header, text="Height map", variable=self.slot_map_show_height_map_var,
+            command=self._slot_map_height_toggle, width=110,
+        ).grid(row=0, column=3, padx=(8, 0), sticky="e")
         self.slot_map_allow_dot_movement_var.set(False)
         MapViewTemplate.build_dot_movement_checkbox(
             header, self.slot_map_allow_dot_movement_var,
-            column=2, command=self._slot_map_dot_movement_changed,
+            column=4, command=self._slot_map_dot_movement_changed,
             canvas=self.slot_map_canvas,
         )
-        ctk.CTkButton(header, text="Save", width=90, command=self._island_slot_save).grid(row=0, column=3, padx=(8, 0), sticky="e")
-        ctk.CTkButton(header, text="Reload", width=90, command=self._slot_map_reload_rd3d).grid(row=0, column=4, padx=(8, 0), sticky="e")
-        ctk.CTkButton(header, text="Reset", width=90, fg_color="#B33939", hover_color="#8F2D2D", command=self._island_slot_reset).grid(row=0, column=5, padx=(8, 0), sticky="e")
+        ctk.CTkButton(header, text="Save", width=90, command=self._island_slot_save).grid(row=0, column=5, padx=(8, 0), sticky="e")
+        ctk.CTkButton(header, text="Reload", width=90, command=self._slot_map_reload_rd3d).grid(row=0, column=6, padx=(8, 0), sticky="e")
+        ctk.CTkButton(header, text="Reset", width=90, fg_color="#B33939", hover_color="#8F2D2D", command=self._island_slot_reset).grid(row=0, column=7, padx=(8, 0), sticky="e")
         self._island_slot_capture_snapshot()
         self._slot_map_bind_canvas(); self._slot_map_rebuild_legend(); self._slot_map_schedule_redraw()
         self.slot_map_selection_var.set(
@@ -759,12 +858,20 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         for point in self.slot_map_points: counts[point[1]] = counts.get(point[1], 0) + 1
         for index, guid in enumerate(sorted(counts, key=lambda v: (len(v), v))):
             visible = self.slot_map_guid_visible.get(guid, True); color = self.slot_map_guid_colors[guid]
-            MapViewTemplate.build_legend_button(
-                legend, text=f"{guid} ({counts[guid]})", color=color, visible=visible,
+            label = GUID_LABELS.get(guid)
+            button_text = (
+                f"{label}\n{guid} ({counts[guid]})"
+                if label else f"{guid} ({counts[guid]})"
+            )
+            button = MapViewTemplate.build_legend_button(
+                legend, text=button_text, color=color, visible=visible,
                 command=lambda value=guid: self._slot_map_toggle_guid(value),
                 row=index // MapViewTemplate.LEGEND_COLUMNS,
                 column=index % MapViewTemplate.LEGEND_COLUMNS,
             )
+            # Known GUIDs use two lines: label above, GUID and count below.
+            if label:
+                button.configure(height=44)
 
     def _slot_map_toggle_guid(self, guid):
         self.slot_map_guid_visible[guid] = not self.slot_map_guid_visible.get(guid, True)
@@ -813,6 +920,144 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             self.slot_map_canvas.configure(cursor="crosshair")
         return "break"
 
+    def _slot_map_height_toggle(self):
+        if self.slot_map_show_height_map_var.get():
+            self._slot_map_prepare_height_overlay()
+        self._slot_map_schedule_redraw()
+
+    @staticmethod
+    def _slot_map_height_color(value):
+        """Detailed perceptual terrain ramp from deep blue to white peaks."""
+        value = max(0.0, min(1.0, float(value)))
+        stops = (
+            (0.00, (18, 35, 110)),
+            (0.08, (22, 72, 160)),
+            (0.16, (25, 120, 195)),
+            (0.24, (25, 170, 205)),
+            (0.32, (42, 190, 155)),
+            (0.40, (75, 195, 95)),
+            (0.48, (135, 200, 65)),
+            (0.56, (195, 205, 65)),
+            (0.64, (235, 195, 70)),
+            (0.72, (230, 150, 65)),
+            (0.80, (205, 100, 60)),
+            (0.88, (175, 72, 72)),
+            (0.94, (205, 155, 145)),
+            (1.00, (245, 245, 245)),
+        )
+        for index in range(len(stops) - 1):
+            left, right = stops[index], stops[index + 1]
+            if value <= right[0]:
+                amount = (value - left[0]) / (right[0] - left[0])
+                rgb = tuple(round(a + (b - a) * amount) for a, b in zip(left[1], right[1]))
+                return (*rgb, 138)
+        return (*stops[-1][1], 138)
+
+    def _slot_map_prepare_height_overlay(self):
+        heightmap = getattr(self, "slot_map_gamedata_heightmap", None)
+        bounds = tuple(self.slot_map_bounds)
+        signature = (id(heightmap), bounds)
+        if self.slot_map_height_overlay_source is not None and signature == self.slot_map_height_overlay_signature:
+            return
+        self.slot_map_height_overlay_source = None
+        self.slot_map_height_overlay_cache.clear()
+        self.slot_map_height_overlay_signature = signature
+        if heightmap is None:
+            self.slot_map_info_var.set("Height map: no valid HeightMap found in Gamedata.")
+            return
+
+        grid_width, grid_height, values = heightmap
+        min_x, max_x, min_z, max_z = bounds
+        output_width = min(512, max(128, round((max_x - min_x) * 2.0)))
+        output_height = min(512, max(128, round((max_z - min_z) * 2.0)))
+
+        # Read only the playable-area portion. Gamedata stores two samples per
+        # world unit, matching the terrain sampling used by RiverSlot placement.
+        sampled = []
+        for py in range(output_height):
+            world_z = max_z - (py / max(output_height - 1, 1)) * (max_z - min_z)
+            grid_z = max(0, min(grid_height - 1, round(world_z * 2.0)))
+            row_offset = grid_z * grid_width
+            for px in range(output_width):
+                world_x = min_x + (px / max(output_width - 1, 1)) * (max_x - min_x)
+                grid_x = max(0, min(grid_width - 1, round(world_x * 2.0)))
+                sampled.append(values[row_offset + grid_x] / 128.0)
+
+        ordered = sorted(sampled)
+        # Percentile normalization prevents a few extreme terrain values from
+        # compressing all normal elevations into nearly the same color.
+        low = ordered[round((len(ordered) - 1) * 0.02)]
+        high = ordered[round((len(ordered) - 1) * 0.98)]
+        if high <= low:
+            low, high = ordered[0], ordered[-1]
+        color_span = max(high - low, 0.001)
+        overlay = Image.new("RGBA", (output_width, output_height))
+        overlay.putdata([
+            self._slot_map_height_color((height - low) / color_span)
+            for height in sampled
+        ])
+        self.slot_map_height_overlay_source = overlay
+        actual_low, actual_high = ordered[0], ordered[-1]
+        self.slot_map_info_var.set(
+            f"Height map: Gamedata {grid_width}x{grid_height} | "
+            f"range {actual_low:.2f} to {actual_high:.2f} | "
+            f"color scale P2-P98: {low:.2f} to {high:.2f}"
+        )
+
+    def _slot_map_draw_river_area(
+            self, canvas, image_x, image_y, image_w, image_h,
+            min_x, max_x, min_z, max_z):
+        """Draw the actual river Bezier paths as a blue map overlay."""
+        if not self.slot_map_show_river_area_var.get():
+            return
+        span_x = max(max_x - min_x, 0.001)
+        span_z = max(max_z - min_z, 0.001)
+
+        def screen(world):
+            x, _y, z = world
+            return (
+                image_x + ((x - min_x) / span_x) * image_w,
+                image_y + ((max_z - z) / span_z) * image_h,
+            )
+
+        pixels_per_world = max(0.1, (image_w / span_x + image_h / span_z) * 0.5)
+        for curve, tangent_scale in getattr(self, "slot_map_river_curves", []):
+            for index in range(len(curve) - 1):
+                p0, _incoming0, outgoing0, width0 = curve[index]
+                p3, incoming1, _outgoing1, width1 = curve[index + 1]
+                # The stored i/o values are tangent offsets relative to p.
+                p1 = tuple(p0[axis] + outgoing0[axis] * tangent_scale for axis in range(3))
+                p2 = tuple(p3[axis] + incoming1[axis] * tangent_scale for axis in range(3))
+                sampled = []
+                steps = 20
+                for step in range(steps + 1):
+                    t = step / steps
+                    u = 1.0 - t
+                    world = tuple(
+                        (u ** 3) * p0[axis]
+                        + 3.0 * (u ** 2) * t * p1[axis]
+                        + 3.0 * u * (t ** 2) * p2[axis]
+                        + (t ** 3) * p3[axis]
+                        for axis in range(3)
+                    )
+                    sampled.extend(screen(world))
+                if len(sampled) < 4:
+                    continue
+                # GUID 1001608 stores the actual river width in w. Convert its
+                # world-space width to the current zoomed canvas scale.
+                world_width = max(1.5, (width0 + width1) * 0.5)
+                area_width = max(5, round(world_width * pixels_per_world))
+                canvas.create_line(
+                    *sampled, fill="#087BC1", width=area_width, smooth=True,
+                    capstyle=tk.ROUND, joinstyle=tk.ROUND, stipple="gray50",
+                    tags=("map_content", "river_course"),
+                )
+                canvas.create_line(
+                    *sampled, fill="#35A9FF", width=max(2, round(area_width * 0.35)),
+                    smooth=True, capstyle=tk.ROUND, joinstyle=tk.ROUND,
+                    tags=("map_content", "river_course"),
+                )
+
     def _slot_map_schedule_redraw(self, _event=None):
         if self.slot_map_canvas is None or not self.slot_map_canvas.winfo_exists(): return
         if self.slot_map_after_id is not None:
@@ -849,6 +1094,20 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             )
         else:
             canvas.create_rectangle(image_x,image_y,image_x+image_w,image_y+image_h,outline=MapViewTemplate.BACKGROUND_BORDER_COLOR,width=MapViewTemplate.BACKGROUND_BORDER_WIDTH,tags=("map_content", "map_background"))
+        if self.slot_map_show_height_map_var.get():
+            if self.slot_map_height_overlay_source is None:
+                self._slot_map_prepare_height_overlay()
+            if self.slot_map_height_overlay_source is not None:
+                self.slot_map_height_overlay_tk, overlay_x, overlay_y = MapViewTemplate.cached_viewport_photo(
+                    self.slot_map_height_overlay_source, image_x, image_y, image_w, image_h,
+                    width, height, self.slot_map_height_overlay_cache,
+                )
+                if self.slot_map_height_overlay_tk is not None:
+                    canvas.create_image(
+                        overlay_x, overlay_y, image=self.slot_map_height_overlay_tk,
+                        anchor="nw", tags=("map_content", "height_map_overlay"),
+                    )
+
         if no_positions:
             canvas.create_text(
                 width / 2, height / 2, text="No Position found.",
@@ -876,6 +1135,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             visible_points.append((px,py,oid,guid,x,y,z,pos,issue))
 
         screen_by_id = {point[2]: point for point in visible_points}
+        self._slot_map_draw_river_area(
+            canvas, image_x, image_y, image_w, image_h,
+            min_x, max_x, min_z, max_z,
+        )
+
         river_orientation_vectors = []
         for primary_id, workarea_id, _family_name in getattr(self, "slot_map_river_pairs", []):
             primary = screen_by_id.get(primary_id)
@@ -896,7 +1160,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         # Show the facing direction at single-point River and Mine slots.
         # Direction is in radians; +X is right and +Z is up on the Slot Map.
         orientation_line_length = 30
-        virtual_orientation_guids = {"117741", "1000029", "614", "116037"}
+        virtual_orientation_guids = {guid for guid, (_family, role) in RIVER_GUID_ROLE.items() if role == "primary"} | {"1000029", "614", "116037"}
         paired_primary_ids = {
             primary_id
             for primary_id, _workarea_id, _family_name
@@ -1014,6 +1278,20 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         if self.slot_map_canvas is not None:
             MapViewTemplate.position_hover_marker(self.slot_map_canvas, self.slot_map_hover_item, None)
 
+    def _slot_map_dot_movement_allowed(self, hit):
+        """Allow dragging only resource slots and GUIDs unknown to the built-in database."""
+        if not hit or len(hit) < 4:
+            return False
+        guid = str(hit[3]).strip()
+        return (
+            guid in SINGLE_SLOT_GUIDS
+            or (guid not in GUID_LABELS and guid not in RIVER_GUID_ROLE)
+        )
+
+    def _slot_map_movable_nearest(self, event):
+        hit = self._slot_map_nearest(event, hover=True)
+        return hit if self._slot_map_dot_movement_allowed(hit) else None
+
     def _slot_map_drag_start(self, event):
         if self._island_slot_mine_left_click(event):
             return "break"
@@ -1021,7 +1299,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             event,
             self.slot_map_canvas,
             bool(self.slot_map_allow_dot_movement_var.get()),
-            lambda drag_event: self._slot_map_nearest(drag_event, hover=True),
+            self._slot_map_movable_nearest,
             lambda hit: hit[4] if len(hit) > 4 and isinstance(hit[4], str) and hit[4].startswith("#") else None,
         )
 
@@ -1040,6 +1318,8 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         )
 
     def _slot_map_commit_drag(self, event, hit):
+        if not self._slot_map_dot_movement_allowed(hit):
+            return
         try:
             x,z=MapViewTemplate.world_from_event(
                 event, self.slot_map_canvas, self.slot_map_bounds,
@@ -1472,7 +1752,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             elif self._combined_slot_position_parts(effective_pos) is None:
                 status = "Invalid position"
             else:
-                status = "Linked"
+                status = "Synced"
 
             parts = self._combined_slot_position_parts(effective_pos) or ["", "", ""]
 
@@ -1627,34 +1907,58 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             text="Mass GUID Change:",
             font=ctk.CTkFont(weight="bold"),
         ).grid(row=0, column=0, padx=(0, 8), sticky="w")
-        self.combined_slot_mass_guid_from = tk.StringVar()
-        self.combined_slot_mass_guid_to = tk.StringVar()
+        guid_options = [
+            f"{label} | {guid}" for guid, label in GUID_LABELS.items()
+        ] + ["Custom"]
+        self.combined_slot_mass_guid_from = tk.StringVar(value=guid_options[0])
+        self.combined_slot_mass_guid_to = tk.StringVar(value=guid_options[0])
+        self.combined_slot_mass_guid_from_custom = tk.StringVar()
+        self.combined_slot_mass_guid_to_custom = tk.StringVar()
         ctk.CTkLabel(mass_guid_bar, text="From:").grid(
             row=0, column=1, padx=(0, 6), sticky="w"
         )
-        from_entry = ctk.CTkEntry(
+        from_menu = ctk.CTkOptionMenu(
             mass_guid_bar,
-            textvariable=self.combined_slot_mass_guid_from,
-            width=180,
+            variable=self.combined_slot_mass_guid_from,
+            values=guid_options,
+            width=205,
+            command=lambda _value: self._combined_slot_update_mass_custom_fields(),
         )
-        from_entry.grid(row=0, column=2, padx=(0, 12), sticky="w")
+        from_menu.grid(row=0, column=2, padx=(0, 6), sticky="w")
+        self.combined_slot_mass_from_custom_entry = ctk.CTkEntry(
+            mass_guid_bar,
+            textvariable=self.combined_slot_mass_guid_from_custom,
+            placeholder_text="Custom From GUID",
+            width=145,
+        )
         ctk.CTkLabel(mass_guid_bar, text="To:").grid(
-            row=0, column=3, padx=(0, 6), sticky="w"
+            row=0, column=4, padx=(6, 6), sticky="w"
         )
-        to_entry = ctk.CTkEntry(
+        to_menu = ctk.CTkOptionMenu(
             mass_guid_bar,
-            textvariable=self.combined_slot_mass_guid_to,
-            width=180,
+            variable=self.combined_slot_mass_guid_to,
+            values=guid_options,
+            width=205,
+            command=lambda _value: self._combined_slot_update_mass_custom_fields(),
         )
-        to_entry.grid(row=0, column=4, padx=(0, 8), sticky="w")
+        to_menu.grid(row=0, column=5, padx=(0, 6), sticky="w")
+        self.combined_slot_mass_to_custom_entry = ctk.CTkEntry(
+            mass_guid_bar,
+            textvariable=self.combined_slot_mass_guid_to_custom,
+            placeholder_text="Custom To GUID",
+            width=145,
+        )
         ctk.CTkButton(
             mass_guid_bar,
             text="Apply",
             width=90,
             command=self._combined_slot_mass_guid_change,
-        ).grid(row=0, column=5, sticky="w")
-        from_entry.bind("<Return>", lambda _event: to_entry.focus_set())
-        to_entry.bind("<Return>", lambda _event: self._combined_slot_mass_guid_change())
+        ).grid(row=0, column=7, padx=(6, 0), sticky="w")
+        self.combined_slot_mass_from_custom_entry.bind(
+            "<Return>", lambda _event: self._combined_slot_mass_guid_change())
+        self.combined_slot_mass_to_custom_entry.bind(
+            "<Return>", lambda _event: self._combined_slot_mass_guid_change())
+        self._combined_slot_update_mass_custom_fields()
 
         counts = {}
         for record in records:
@@ -1667,10 +1971,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         table_frame.grid_columnconfigure(0, weight=1)
         table_frame.grid_rowconfigure(0, weight=1)
         columns = (
-            "id", "game_guid", "game_pos", "map_guid", "map_pos",
+            "guid_label", "id", "game_guid", "game_pos", "map_guid", "map_pos",
             "status", "new_guid", "new_pos",
         )
         headings = {
+            "guid_label": "Label",
             "id": "Object ID",
             "game_guid": "Gamedata GUID",
             "game_pos": "Gamedata Position",
@@ -1681,7 +1986,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             "new_pos": "New Position",
         }
         tag_styles = {
-            "Linked": {"foreground": "#55bb66"},
+            "Synced": {"foreground": "#55bb66"},
             "Mapname only": {"foreground": "#ff6666"},
             "GUID mismatch": {"foreground": "#ffb000"},
         }
@@ -1690,17 +1995,17 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             columns=columns,
             headings=headings,
             widths={
-                "id": 185, "game_guid": 105, "game_pos": 190,
+                "guid_label": 150, "id": 185, "game_guid": 105, "game_pos": 190,
                 "map_guid": 105, "map_pos": 190, "status": 115,
                 "new_guid": 105, "new_pos": 190,
             },
             min_widths={
-                "id": 135, "game_guid": 100, "game_pos": 145,
+                "guid_label": 110, "id": 135, "game_guid": 100, "game_pos": 145,
                 "map_guid": 100, "map_pos": 145, "status": 100,
                 "new_guid": 95, "new_pos": 145,
             },
             max_widths={
-                "id": 260, "game_guid": 180, "game_pos": 330,
+                "guid_label": 240, "id": 260, "game_guid": 180, "game_pos": 330,
                 "map_guid": 180, "map_pos": 330, "status": 190,
                 "new_guid": 180, "new_pos": 330,
             },
@@ -1739,13 +2044,34 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
 
         values = ctk.CTkFrame(editor, fg_color="transparent")
         values.grid(row=1, column=0, padx=10, pady=(4, 8), sticky="w")
+        editor_guid_options = [
+            f"{label} | {guid}" for guid, label in GUID_LABELS.items()
+        ] + ["Custom"]
+        ctk.CTkLabel(values, text="GUID", width=42, anchor="e").grid(
+            row=0, column=0, padx=(0, 4), sticky="e"
+        )
+        self.combined_slot_editor_guid_menu = ctk.CTkOptionMenu(
+            values,
+            variable=self.combined_slot_editor_guid_selection,
+            values=editor_guid_options,
+            width=205,
+            command=lambda _value: self._combined_slot_editor_guid_selection_changed(),
+        )
+        self.combined_slot_editor_guid_menu.grid(
+            row=0, column=1, padx=(0, 6), sticky="w"
+        )
+        self.combined_slot_editor_guid_entry = ctk.CTkEntry(
+            values,
+            textvariable=self.combined_slot_editor_guid,
+            placeholder_text="Custom GUID",
+            width=150,
+        )
         fields = (
-            ("GUID", self.combined_slot_editor_guid, 150),
             ("X", self.combined_slot_editor_x, 105),
             ("Y", self.combined_slot_editor_y, 105),
             ("Z", self.combined_slot_editor_z, 105),
         )
-        column = 0
+        column = 3
         for label, variable, width in fields:
             ctk.CTkLabel(values, text=label, width=42, anchor="e").grid(
                 row=0, column=column, padx=(0, 4), sticky="e"
@@ -1754,6 +2080,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                 row=0, column=column + 1, padx=(0, 12)
             )
             column += 2
+        self._combined_slot_editor_guid_selection_changed()
         ctk.CTkButton(
             values, text="Apply", width=90,
             command=self._combined_slot_editor_apply
@@ -1835,7 +2162,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             self._combined_slot_bind_ram_record(record)
         self.combined_slot_filter.set("")
         self.combined_slot_editor_id.set("")
-        self.combined_slot_editor_guid.set("")
+        self._combined_slot_set_editor_guid("")
         self.combined_slot_editor_x.set("")
         self.combined_slot_editor_y.set("")
         self.combined_slot_editor_z.set("")
@@ -1876,13 +2203,40 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             record["game_position"] = " ".join(parts)
         self._combined_slot_render()
 
+    @staticmethod
+    def _combined_slot_guid_from_mass_selection(selection, custom_value):
+        selection = str(selection or "").strip()
+        if selection == "Custom":
+            return str(custom_value or "").strip()
+        return selection.rsplit(" | ", 1)[-1].strip() if " | " in selection else selection
+
+    def _combined_slot_update_mass_custom_fields(self):
+        from_entry = getattr(self, "combined_slot_mass_from_custom_entry", None)
+        to_entry = getattr(self, "combined_slot_mass_to_custom_entry", None)
+        if from_entry is not None and from_entry.winfo_exists():
+            if self.combined_slot_mass_guid_from.get() == "Custom":
+                from_entry.grid(row=0, column=3, padx=(0, 6), sticky="w")
+            else:
+                from_entry.grid_remove()
+        if to_entry is not None and to_entry.winfo_exists():
+            if self.combined_slot_mass_guid_to.get() == "Custom":
+                to_entry.grid(row=0, column=6, padx=(0, 6), sticky="w")
+            else:
+                to_entry.grid_remove()
+
     def _combined_slot_mass_guid_change(self):
-        from_guid = self.combined_slot_mass_guid_from.get().strip()
-        to_guid = self.combined_slot_mass_guid_to.get().strip()
+        from_guid = self._combined_slot_guid_from_mass_selection(
+            self.combined_slot_mass_guid_from.get(),
+            self.combined_slot_mass_guid_from_custom.get(),
+        )
+        to_guid = self._combined_slot_guid_from_mass_selection(
+            self.combined_slot_mass_guid_to.get(),
+            self.combined_slot_mass_guid_to_custom.get(),
+        )
         if not from_guid or not to_guid:
             messagebox.showwarning(
                 "Mass GUID Change",
-                "Enter both a From GUID and a To GUID.",
+                "Select both GUIDs or enter values for the selected Custom options.",
                 parent=self.combined_slot_window,
             )
             return
@@ -1915,7 +2269,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
 
         selected_id = self.combined_slot_editor_id.get().strip()
         if selected_id in changed_ids:
-            self.combined_slot_editor_guid.set(to_guid)
+            self._combined_slot_set_editor_guid(to_guid)
         self._combined_slot_render()
         self.status_var.set(
             f"Slot Editor: changed GUID {from_guid} to {to_guid} for "
@@ -1949,8 +2303,10 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
 
     def _combined_slot_tree_values(self, record):
         new_pos = " ".join((record["x_var"].get().strip(), record["y_var"].get().strip(), record["z_var"].get().strip()))
+        game_guid = str(record.get("game_guid") or "").strip()
         return (
-            record["id"], record.get("game_guid") or "-", record.get("game_position") or "-",
+            GUID_LABELS.get(game_guid, ""),
+            record["id"], game_guid or "-", record.get("game_position") or "-",
             record.get("guid") or "-", record.get("position") or "-", record.get("status") or "-",
             record["guid_var"].get().strip(), new_pos,
         )
@@ -1978,6 +2334,37 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             tree.focus(selected_id)
         self._combined_slot_update_summary()
 
+    @staticmethod
+    def _combined_slot_guid_selection_for_value(guid):
+        guid = str(guid or "").strip()
+        label = GUID_LABELS.get(guid)
+        return f"{label} | {guid}" if label else "Custom"
+
+    def _combined_slot_set_editor_guid(self, guid):
+        guid = str(guid or "").strip()
+        self.combined_slot_editor_guid.set(guid)
+        self.combined_slot_editor_guid_selection.set(
+            self._combined_slot_guid_selection_for_value(guid))
+        self._combined_slot_editor_guid_selection_changed()
+
+    def _combined_slot_editor_guid_selection_changed(self):
+        entry = getattr(self, "combined_slot_editor_guid_entry", None)
+        if entry is None or not entry.winfo_exists():
+            return
+        selection = self.combined_slot_editor_guid_selection.get().strip()
+        if selection == "Custom":
+            entry.grid(row=0, column=2, padx=(0, 12), sticky="w")
+        else:
+            self.combined_slot_editor_guid.set(
+                self._combined_slot_guid_from_mass_selection(selection, ""))
+            entry.grid_remove()
+
+    def _combined_slot_editor_selected_guid(self):
+        return self._combined_slot_guid_from_mass_selection(
+            self.combined_slot_editor_guid_selection.get(),
+            self.combined_slot_editor_guid.get(),
+        )
+
     def _combined_slot_tree_select(self, _event=None):
         tree = self.combined_slot_tree
         selection = tree.selection() if tree is not None else ()
@@ -1990,7 +2377,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         if record is None:
             return
         self.combined_slot_editor_id.set(object_id)
-        self.combined_slot_editor_guid.set(record["guid_var"].get())
+        self._combined_slot_set_editor_guid(record["guid_var"].get())
         self.combined_slot_editor_x.set(record["x_var"].get())
         self.combined_slot_editor_y.set(record["y_var"].get())
         self.combined_slot_editor_z.set(record["z_var"].get())
@@ -2001,7 +2388,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         record = self.combined_slot_records_by_id.get(object_id)
         if record is None:
             return
-        guid = self.combined_slot_editor_guid.get().strip()
+        guid = self._combined_slot_editor_selected_guid()
         position = " ".join((self.combined_slot_editor_x.get().strip(), self.combined_slot_editor_y.get().strip(), self.combined_slot_editor_z.get().strip()))
         if not guid or self._combined_slot_position_parts(position) is None:
             messagebox.showerror("Slot Editor", "GUID and X/Y/Z must be valid.", parent=self.combined_slot_window)
@@ -2036,7 +2423,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                 parent=self.combined_slot_window,
             )
             return
-        self.combined_slot_editor_guid.set(guid)
+        self._combined_slot_set_editor_guid(guid)
         self.combined_slot_editor_x.set(parts[0])
         self.combined_slot_editor_y.set(parts[1])
         self.combined_slot_editor_z.set(parts[2])
@@ -2116,7 +2503,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             if record["id"] not in existing_ids
         ]
         self.combined_slot_editor_id.set("")
-        self.combined_slot_editor_guid.set("")
+        self._combined_slot_set_editor_guid("")
         self.combined_slot_editor_x.set("")
         self.combined_slot_editor_y.set("")
         self.combined_slot_editor_z.set("")
@@ -2221,7 +2608,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             record["position"] = pos
             record["game_guid"] = guid if object_id in self.combined_slot_game_nodes_by_id else record["game_guid"]
             record["game_position"] = pos if object_id in self.combined_slot_game_nodes_by_id else record["game_position"]
-            record["status"] = "Linked" if object_id in self.combined_slot_game_nodes_by_id else "Mapname only"
+            record["status"] = "Synced" if object_id in self.combined_slot_game_nodes_by_id else "Mapname only"
         self.combined_slot_dirty_ids.clear()
         self.combined_slot_deleted_ids.clear()
 

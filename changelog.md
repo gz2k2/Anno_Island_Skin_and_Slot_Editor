@@ -1,15 +1,18 @@
-# Anno 1800 Island Skin and Slot Editor by gz2k2
+# Changelog
 
-## [v0.111.5]
+## v0.114.25
 
-### Breaking Changes
-- **Temporary Maps Incompatibility**: Old temporary map data is not compatible with this update. Please remove all temporary maps and extract all files again.
+### Slot Map
 
-### Added
-- **Settings Tab**: Added Expert Settings section, featuring a new "Experimental Features" toggle.
+- Added readable labels for known slot GUIDs throughout the Slot Editor and Slot Map.
+- Added labels for MineSlots, Mining Work Areas, RiverSlots, Clay Slots, Oil Slots, and Gas Slots.
+- Added a RiverFlow / River Area overlay to the Slot Map.
+- Added a HeightMap overlay to the Slot Map.
 
-### Changed
-- **River Slots**: River Slots have been moved under the experimental features flag.
+### RiverSlots
 
-### Fixed
-- Fixed a file cache mismatch issue.
+- Added Integrated and Custom RiverSlot modes.
+- Integrated mode now always uses:
+  - RiverSlot GUID `2144000100`
+  - Work Area GUID `2144000101`
+

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from app.backend.patch_store import PATCH_STORE
+from app.backend.backend_patch_store import PATCH_STORE
 
 from app.functions.function_custom_content import (
     get_combined_categories,
@@ -13,7 +13,7 @@ from app.functions.function_custom_content import (
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import webbrowser
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 from pathlib import Path
 
 import customtkinter as ctk

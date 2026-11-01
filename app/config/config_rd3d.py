@@ -34,14 +34,16 @@ RD3D_CATEGORIES = {
         'data/dlc06/graphics/props/terrain_props/rocks/pebbles_colony02/pebbles_04.prp',
     ),
     'Pebbles': (
-        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_01.prp',
-        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_02.prp',
-        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_03.prp',
-        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_04.prp',
         'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_01.prp',
         'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_02.prp',
         'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_03.prp',
         'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_04.prp',
+    ),
+    'Pebbles Enbesa (reddish)': (
+        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_01.prp',
+        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_02.prp',
+        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_03.prp',
+        'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_04.prp',
     ),
     'Rocks Ice': (
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_01.prp',
@@ -525,7 +527,7 @@ RD3D_CATEGORIES = {
         'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_05.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_06.prp',
     ),
-    'Tree Fir Trees Moderate': (
+    'Tree Moderate Fir Trees': (
         'data/graphics/props/terrain_props/vegetation/trees/moderate/tree_fir_01_var0.prp',
         'data/graphics/props/terrain_props/vegetation/trees/moderate/tree_fir_01_var1.prp',
         'data/graphics/props/terrain_props/vegetation/trees/moderate/tree_fir_01_var2.prp',

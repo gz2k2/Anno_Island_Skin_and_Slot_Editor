@@ -8,8 +8,8 @@ import statistics
 import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
-import app.backend.xml_backend as ET
-from app.backend.patch_store import (
+import app.backend.backend_xml as ET
+from app.backend.backend_patch_store import (
     PATCH_STORE, build_gamedata_slot_patch, build_a7minfo_slot_patch,
 )
 from app.config.config_slot import (
@@ -625,11 +625,6 @@ class IslandSlotBaseMixin:
             ))
         if hit:
             entries.append({"label": "Remove Slot", "command": lambda h=hit: self._island_slot_remove_ids({h[2]})})
-            if str(hit[3]) in RIVER_GUID_ROLE or str(hit[3]) in MINE_SLOT_GUIDS:
-                entries.append({
-                    "label": "Rotate",
-                    "command": lambda h=hit: self._island_slot_rotate_90(h),
-                })
         if self.island_slot_selected_ids:
             entries.append({
                 "label": f"Remove selected ({len(self.island_slot_selected_ids)})",
@@ -638,22 +633,30 @@ class IslandSlotBaseMixin:
         if hit or self.island_slot_selected_ids:
             entries.append({"kind": "separator"})
         slot_entries = []
+        slot_labels = {
+            "clay slot": "Clay Slot",
+            "oil slot": "Oil Slot",
+            "gas slot (arctic)": "Gas Slot",
+        }
         for name in SLOT_DEFINITIONS:
             if name == "Riverslot":
                 # The old paired Riverslot insertion is intentionally hidden.
                 # Keep its implementation internally as Riverslot_dont_use only.
                 continue
             slot_entries.append({
-                "label": name,
+                "label": slot_labels.get(name, name),
                 "command": lambda n=name, e=event: self._island_slot_add_at_event(e, n),
             })
-        if self._experimental_enabled():
-            slot_entries.append({
-                "label": "River Slot (Experimental)",
-                "foreground": "#ff3b30",
-                "activeforeground": "#ff6b60",
-                "command": lambda e=event: self._island_slot_add_riverslot_at_event(e),
-            })
+        # River Slot placement is a regular Slot Map feature and is always
+        # available. Keep the default menu colors so it behaves like all other
+        # stable slot types and is independent of Expert Settings > Experimental.
+        slot_entries.append({"kind": "separator"})
+        slot_entries.append({
+            "label": "River Slot",
+            "foreground": "black",
+            "activeforeground": "black",
+            "command": lambda e=event: self._island_slot_add_riverslot_at_event(e),
+        })
 # old riverslot start. comment out later 
 #        slot_entries.append({
 #            "kind": "cascade", "label": "Riverslot_dont_use (2 points)",
@@ -666,21 +669,20 @@ class IslandSlotBaseMixin:
 #            ],
 #        })
 # old riverslot end
+        slot_entries.append({"kind": "separator"})
         for mine_name, mine_guid in self.MINE_SLOT_VARIANTS:
             slot_entries.append({
                 "label": mine_name,
                 "command": lambda n=mine_name, g=mine_guid, e=event: self._island_slot_add_mineslot_at_event(e, n, g),
             })
+        slot_entries.append({"kind": "separator"})
+        slot_entries.append({
+            "label": "Custom Slot",
+            "command": lambda e=event: self._island_slot_add_custom_at_event(
+                e, "Custom Slot", "gas slot (arctic)"
+            ),
+        })
         entries.append({"kind": "cascade", "label": "Add Slot", "entries": slot_entries})
-        custom_entries = [
-            {"label": label, "command": lambda n=label, b=base_type, e=event: self._island_slot_add_custom_at_event(e, n, b)}
-            for label, base_type in (
-                ("custom clay slot", "clay slot"),
-                ("custom oil slot", "oil slot"),
-                ("custom gas slot", "gas slot (arctic)"),
-            )
-        ]
-        entries.append({"kind": "cascade", "label": "Add Custom Slot", "entries": custom_entries})
         entries.append({"kind": "separator"})
         entries.append({
             "label": "Change GUID",
@@ -910,7 +912,13 @@ class IslandSlotBaseMixin:
         if event is None:
             wx, wz = ex, ez
         else:
-            wx, wz = self._island_slot_world(event)
+            try:
+                wx, wz = self._island_slot_world(event)
+            except ValueError:
+                # Mouse motion in the map margins is normal. Hide the preview
+                # instead of raising repeated Tk callback exceptions.
+                canvas.delete("mine_placement_preview")
+                return True
             if placement.get("kind") == "river":
                 wx, wz = math.floor(wx) + 0.5, math.floor(wz) + 0.5
                 wx, wz = self._island_slot_snap_river_target(
@@ -931,8 +939,17 @@ class IslandSlotBaseMixin:
             )
         sx, sy = screen(ex, ez)
         tx, ty = screen(wx, wz)
-        distance = math.hypot(wx - ex, wz - ez)
-        valid = MINE_MIN_DISTANCE <= distance <= MINE_MAX_DISTANCE
+        if placement.get("kind") == "river":
+            geometry = self._river_geometry(
+                placement["entrance"], (wx, placement["entrance"][1], wz))
+            distance = geometry["length"]
+        else:
+            distance = math.hypot(wx - ex, wz - ez)
+        valid = (
+            self.RIVER_MIN_DISTANCE <= distance <= self.RIVER_MAX_DISTANCE
+            if placement.get("kind") == "river"
+            else MINE_MIN_DISTANCE <= distance <= MINE_MAX_DISTANCE
+        )
         color = "#39D98A" if valid else "#FF5C5C"
         canvas.create_line(sx, sy, tx, ty, fill=color, width=2,
                            dash=(6, 4), tags=("mine_placement_preview",))
@@ -957,12 +974,16 @@ class IslandSlotBaseMixin:
         if placement is None:
             return False
         wx, wz = self._island_slot_world(event)
-        wx, wz = math.floor(wx) + 0.5, math.floor(wz) + 0.5
         entrance = placement["entrance"]
         is_river = placement.get("kind") == "river"
         if is_river:
             wx, wz = self._island_slot_snap_river_target(entrance, wx, wz)
-        distance = math.hypot(wx - entrance[0], wz - entrance[2])
+            geometry = self._river_geometry(
+                entrance, (wx, entrance[1], wz))
+            distance = geometry["length"]
+        else:
+            wx, wz = math.floor(wx) + 0.5, math.floor(wz) + 0.5
+            distance = math.hypot(wx - entrance[0], wz - entrance[2])
         minimum = self.RIVER_MIN_DISTANCE if is_river else self.MINE_MIN_DISTANCE
         maximum = self.RIVER_MAX_DISTANCE if is_river else self.MINE_MAX_DISTANCE
         title = "Add RiverSlot" if is_river else "Add Mine Slot"
@@ -972,7 +993,11 @@ class IslandSlotBaseMixin:
                 f"Work Area distance must be between {minimum:g} and {maximum:g}.",
                 parent=self.slot_map_window)
             return True
-        wy = estimate_nearby_height(wx, wz, placement["samples"])
+        wy = (
+            self._river_terrain_height(wx, wz, placement["samples"])
+            if is_river
+            else self._river_terrain_height(wx, wz, placement["samples"])
+        )
         if wy is None or wy <= 0:
             messagebox.showerror(
                 title, "Work Area must be placed on emerged terrain.",
@@ -988,7 +1013,7 @@ class IslandSlotBaseMixin:
         try:
             if is_river:
                 self._island_slot_commit_native_river_pair(
-                    entrance, (wx, wy, wz), placement["samples"],
+                    placement, entrance, (wx, wy, wz), placement["samples"],
                     placement["source"], status)
             else:
                 self._island_slot_commit_mine_pair(

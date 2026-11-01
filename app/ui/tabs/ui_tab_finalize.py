@@ -58,16 +58,28 @@ class FinalizeTabMixin:
 
         options = ctk.CTkFrame(tab)
         options.grid(row=2, column=0, padx=5, pady=(0, 10), sticky="ew")
+        option_left = ctk.CTkFrame(options, fg_color="transparent")
+        option_left.pack(side="left", padx=15, pady=12)
         ctk.CTkCheckBox(
-            options, text="Back up existing binary files",
+            option_left, text="Back up existing binary files",
             variable=self.finalize_backup_var,
-        ).pack(side="left", padx=15, pady=12)
+        ).pack(anchor="w")
 
+        export_row = ctk.CTkFrame(option_left, fg_color="transparent")
+        export_row.pack(anchor="w", pady=(10, 0))
         self.finalize_export_material_btn = ctk.CTkButton(
-            options, text="Export custom content files", width=230,
+            export_row, text="Export custom content files", width=230,
             command=self._export_finalize_custom_content,
         )
-        self.finalize_export_material_btn.pack(side="right", padx=15, pady=12)
+        self.finalize_export_material_btn.pack(side="left")
+        ctk.CTkLabel(
+            export_row,
+            text=(
+                "Exports the selected Material Set, used custom object files and, "
+                "when Integrated River Slot GUIDs are used, the bundled Riverslots content."
+            ),
+            text_color="gray70", justify="left", anchor="w", wraplength=620,
+        ).pack(side="left", padx=(12, 0))
 
         controls = ctk.CTkFrame(tab, fg_color="transparent")
         controls.grid(row=3, column=0, padx=5, pady=(0, 10), sticky="ew")
@@ -413,6 +425,42 @@ class FinalizeTabMixin:
         ]
         return matches[0] if len(matches) == 1 else None
 
+    def _finalize_uses_integrated_riverslots(self):
+        """Return whether bundled Integrated RiverSlot content is required.
+
+        Expert Settings is the authoritative source. The Gamedata scan remains
+        as a fallback for projects created before the mode setting existed.
+        """
+        mode_var = getattr(self, "river_slot_mode_var", None)
+        mode = str(mode_var.get() if mode_var is not None else "").strip().casefold()
+        if mode == "integrated":
+            return True
+
+        integrated = {"2144000100", "2144000101"}
+        tree = getattr(self, "_island_slot_ram_game_tree", None)
+        if tree is not None:
+            for node in tree.getroot().iter():
+                if str(getattr(node, "tag", "")).rsplit("}", 1)[-1].lower() == "guid":
+                    if (node.text or "").strip() in integrated:
+                        return True
+        candidates = []
+        value = getattr(self, "gamedata_file_var", None)
+        if value is not None and value.get().strip():
+            path = Path(value.get().strip())
+            candidates.extend((path.with_name(path.stem + "_patched.xml"), path))
+        for path in candidates:
+            if not path.is_file():
+                continue
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue
+            compact = b"".join(data.lower().split())
+            if any((b"<guid>" + guid.encode("ascii") + b"</guid>") in compact
+                   for guid in integrated):
+                return True
+        return False
+
     def _export_finalize_custom_content(self):
         """Export the selected material set and currently used custom object files."""
         if self._busy():
@@ -468,6 +516,26 @@ class FinalizeTabMixin:
                     relative = Path(source.name)
                 export_items.append((source, Path('custom_objects') / relative, 'Custom Object'))
 
+        if self._finalize_uses_integrated_riverslots():
+            gamedata_root = Path(self.BUNDLE_DIR) / 'data' / 'gamedata'
+            riverslots_source = next(
+                (path for path in gamedata_root.iterdir()
+                 if path.is_dir() and path.name.casefold() == 'riverslots'),
+                gamedata_root / 'riverslots',
+            ) if gamedata_root.is_dir() else gamedata_root / 'riverslots'
+            if not riverslots_source.is_dir():
+                missing.append(f'Integrated Riverslots content folder: {riverslots_source}')
+            else:
+                for source in sorted(
+                    (path for path in riverslots_source.rglob('*') if path.is_file()),
+                    key=lambda path: str(path.relative_to(riverslots_source)).casefold(),
+                ):
+                    export_items.append((
+                        source,
+                        source.relative_to(riverslots_source),
+                        'Integrated Riverslots',
+                    ))
+
         if missing:
             messagebox.showerror(
                 'Export Custom Content Files',
@@ -501,6 +569,9 @@ class FinalizeTabMixin:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if source is None:
                     target.write_text(kind, encoding='utf-8')
+                elif source.is_dir():
+                    if source.resolve() != target.resolve():
+                        shutil.copytree(source, target, dirs_exist_ok=True)
                 elif source.resolve() != target.resolve():
                     shutil.copy2(source, target)
                 exported.append(target)

@@ -25,8 +25,8 @@ import subprocess
 import sys
 import threading
 import time
-import app.backend.xml_backend as ET
-from app.backend.patch_store import PATCH_STORE
+import app.backend.backend_xml as ET
+from app.backend.backend_patch_store import PATCH_STORE
 from app.functions.function_xml_repair import parse_xml_tolerant, sanitize_xml_text
 import webbrowser
 import urllib.request
@@ -135,6 +135,8 @@ class CancelledError(RuntimeError):
     pass
 
 
+from app.config.config_slot import configure_personal_river_guids
+
 class App(RegionDetectionMixin, UIMixin, ctk.CTk):
     # Constants required by the decoupled UI layer.
     APP_NAME = APP_NAME
@@ -142,6 +144,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
     APP_VERSION = APP_VERSION
     UPDATE_PAGE_URL = UPDATE_PAGE_URL
     CONFIG_FILE = CONFIG_FILE
+    BUNDLE_DIR = BUNDLE_DIR
 
     def __init__(self):
         super().__init__()
@@ -183,6 +186,9 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         self.backup_var = tk.BooleanVar(value=True)
         # Master switch for features and UI elements marked as experimental.
         self.experimental_var = tk.BooleanVar(value=False)
+        self.river_slot_mode_var = tk.StringVar(value="Integrated")
+        self.river_slot_guid_var = tk.StringVar(value="")
+        self.river_workarea_guid_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="Ready")
         self.rd3d_save_info_var = tk.StringVar(value="")
         self.gamedata_file_var = tk.StringVar()
@@ -3356,6 +3362,15 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             self.backup_var.set(config.getboolean("Options", "backup", fallback=True))
             self.experimental_var.set(
                 config.getboolean("Options", "experimental", fallback=False))
+            river_mode = config.get(
+                "Options", "river_slot_mode", fallback="Integrated").strip().title()
+            self.river_slot_mode_var.set(
+                river_mode if river_mode in {"Integrated", "Custom"} else "Integrated")
+            self.river_slot_guid_var.set(
+                config.get("Options", "river_slot_guid", fallback="").strip())
+            self.river_workarea_guid_var.set(
+                config.get("Options", "river_workarea_guid", fallback="").strip())
+            self._configure_selected_river_guids()
             self.tmc_parallel_var.set(str(config.getint("Options", "tmc_parallel_processes", fallback=4)))
         except (OSError, configparser.Error, ValueError) as exc:
             messagebox.showwarning("Configuration", f"config.ini could not be loaded:\n{exc}")
@@ -3382,6 +3397,9 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             "unpack_tmc": str(self.unpack_tmc_var.get()),
             "backup": str(self.backup_var.get()),
             "experimental": str(self.experimental_var.get()),
+            "river_slot_mode": self.river_slot_mode_var.get().strip() or "Integrated",
+            "river_slot_guid": self.river_slot_guid_var.get().strip(),
+            "river_workarea_guid": self.river_workarea_guid_var.get().strip(),
             "tmc_parallel_processes": self.tmc_parallel_var.get().strip() or "4",
         }
         try:
@@ -3392,6 +3410,14 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             messagebox.showerror("Configuration", f"config.ini could not be saved:\n{exc}")
             return False
 
+    def _configure_selected_river_guids(self):
+        if self.river_slot_mode_var.get() == "Custom":
+            primary = self.river_slot_guid_var.get().strip()
+            workarea = self.river_workarea_guid_var.get().strip()
+        else:
+            primary, workarea = "2144000100", "2144000101"
+        configure_personal_river_guids(primary, workarea)
+
     def _experimental_enabled(self):
         """Return whether UI/features explicitly marked experimental are enabled."""
         variable = getattr(self, "experimental_var", None)
@@ -3399,6 +3425,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
     def _save_config_with_feedback(self):
         if self._save_config():
+            self._configure_selected_river_guids()
             self.status_var.set("Settings saved")
 
     def _close(self):

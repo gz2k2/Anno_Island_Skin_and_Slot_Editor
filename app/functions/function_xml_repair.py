@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 _TOKEN_LIMIT = 65534
 _TOKEN_PREFIX = "__AISX_INVALID_XML_"
 _INVALID_REF = re.compile(r"&#(?:x([0-9A-Fa-f]+)|([0-9]+));")

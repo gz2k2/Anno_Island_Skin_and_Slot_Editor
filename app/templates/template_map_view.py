@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-import app.backend.xml_backend as ET
+import app.backend.backend_xml as ET
 from PIL import Image, ImageTk
 import tkinter as tk
 import customtkinter as ctk

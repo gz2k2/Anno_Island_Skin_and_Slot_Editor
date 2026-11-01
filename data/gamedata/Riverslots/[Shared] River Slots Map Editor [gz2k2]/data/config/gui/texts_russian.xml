@@ -1,0 +1,20 @@
+<ModOps>
+  <ModOp Type="add" Path="/TextExport/Texts">
+    <Text>
+      <GUID>2144000100</GUID>
+      <Text>Игровой автомат River</Text>
+    </Text>
+    <Text>
+      <GUID>2144000101</GUID>
+      <Text>Игровой автомат River</Text>
+    </Text>
+    <Text>
+      <GUID>2144000102</GUID>
+      <Text>Постройте на этом участке здание для реки, чтобы использовать энергию стремительного течения.</Text>
+    </Text>
+    <Text>
+      <GUID>2144000103</GUID>
+      <Text>Постройте на этом участке здание для реки, чтобы использовать энергию стремительного течения.</Text>
+    </Text>
+  </ModOp>
+</ModOps>

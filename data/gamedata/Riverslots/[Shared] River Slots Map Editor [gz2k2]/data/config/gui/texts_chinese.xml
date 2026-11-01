@@ -1,0 +1,20 @@
+<ModOps>
+  <ModOp Type="add" Path="/TextExport/Texts">
+    <Text>
+      <GUID>2144000100</GUID>
+      <Text>河槽</Text>
+    </Text>
+    <Text>
+      <GUID>2144000101</GUID>
+      <Text>河槽</Text>
+    </Text>
+    <Text>
+      <GUID>2144000102</GUID>
+      <Text>在此地点建立河流建筑，以利用湍急水流的力量。</Text>
+    </Text>
+    <Text>
+      <GUID>2144000103</GUID>
+      <Text>在此地点建立河流建筑，以利用湍急水流的力量。</Text>
+    </Text>
+  </ModOp>
+</ModOps>
