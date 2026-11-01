@@ -86,9 +86,75 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: |
-            dist/${{ env.APP_BASENAME }}_v${{ needs.meta.outputs.version }}.exe
-            tools/tools.zip
+          path: dist/${{ env.APP_BASENAME }}_v${{ needs.meta.outputs.version }}.exe
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Windows helper tools: latest FileDBReader + RdaConsole releases.
+  # Falls back per tool to the copy in tools/tools.zip if a download fails.
+  # ------------------------------------------------------------------
+  build-windows-tools:
+    needs: meta
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dl out
+
+          fetch_tool() {
+            repo="$1"; name="$2"; exe="$3"
+            echo "=== $name ($repo) ==="
+            tag="$(gh release view --repo "$repo" --json tagName -q .tagName)" || return 1
+            echo "Latest release: $tag"
+            assets="$(gh release view --repo "$repo" --json assets -q '.assets[].name')" || return 1
+            echo "Assets:"; echo "$assets"
+            candidates="$(echo "$assets" | grep -iE '\.(zip|exe)$' | grep -viE 'linux|osx|macos|darwin|source' || true)"
+            pick="$(echo "$candidates" | grep -iE 'win|x64' | head -n1 || true)"
+            [ -n "$pick" ] || pick="$(echo "$candidates" | head -n1)"
+            [ -n "$pick" ] || { echo "No Windows asset found"; return 1; }
+            echo "Using asset: $pick"
+            rm -rf "dl/$name"; mkdir -p "dl/$name" "out/$name"
+            gh release download "$tag" --repo "$repo" --pattern "$pick" --dir "dl/$name" || return 1
+            case "$pick" in
+              *.zip)
+                unzip -q "dl/$name/$pick" -d "dl/$name/x"
+                bin="$(find "dl/$name/x" -type f -iname "$exe" | head -n1)"
+                [ -n "$bin" ] || { echo "$exe not found in zip"; return 1; }
+                cp -r "$(dirname "$bin")"/. "out/$name/"
+                ;;
+              *.exe)
+                cp "dl/$name/$pick" "out/$name/$exe"
+                ;;
+            esac
+            [ -f "out/$name/$exe" ] || return 1
+          }
+
+          fallback_tool() {
+            name="$1"
+            echo "::warning::Using bundled tools/tools.zip for $name"
+            rm -rf "out/$name"
+            unzip -q tools/tools.zip "$name/*" -d out
+          }
+
+          fetch_tool anno-mods/FileDBReader FileDBReader FileDBReader.exe || fallback_tool FileDBReader
+          fetch_tool anno-mods/RdaConsole RdaConsole RdaConsole.exe || fallback_tool RdaConsole
+          find out -maxdepth 2
+
+      - name: Create tools.zip
+        shell: pwsh
+        run: Compress-Archive -Path out/* -DestinationPath tools.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-tools
+          path: tools.zip
           if-no-files-found: error
 
   # ------------------------------------------------------------------
@@ -217,8 +283,8 @@ jobs:
   # ------------------------------------------------------------------
   release:
     # The Windows release must not be blocked by a failing Linux build.
-    if: ${{ always() && needs.build-windows.result == 'success' }}
-    needs: [meta, build-windows, build-linux]
+    if: ${{ always() && needs.build-windows.result == 'success' && needs.build-windows-tools.result == 'success' }}
+    needs: [meta, build-windows, build-windows-tools, build-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -226,6 +292,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: windows
+          path: artifacts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-tools
           path: artifacts
 
       - uses: actions/download-artifact@v4
@@ -247,7 +318,7 @@ jobs:
             if [ -f changelog.md ]; then cat changelog.md; else echo "No changelog was provided for this release."; fi
             echo
             echo "### Downloads"
-            echo "- Windows: \`${APP_BASENAME}_v${{ needs.meta.outputs.version }}.exe\` (+ \`tools.zip\`)"
+            echo "- Windows: \`${APP_BASENAME}_v${{ needs.meta.outputs.version }}.exe\` (+ \`tools.zip\` with the latest FileDBReader and RdaConsole)"
             echo "- Linux (x86_64): \`${APP_BASENAME}_v${{ needs.meta.outputs.version }}_linux_x86_64.tar.gz\` (includes helper tools)"
             if [ "${{ needs.build-linux.result }}" != "success" ]; then
               echo
