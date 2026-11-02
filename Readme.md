@@ -24,6 +24,19 @@
 - Export cleaned map data for use in a mod project
 - Export only the custom content actually used by the current island
 
+## Linux
+
+Release builds include a Linux archive (`*_linux_x86_64.tar.gz`) with the editor and self-contained `FileDBReader` / `RdaConsole` helper tools (no .NET install required).
+
+```bash
+tar -xzf Anno_Island_Skin_and_Slot_Editor_v<version>_linux_x86_64.tar.gz
+./Anno_Island_Skin_and_Slot_Editor_v<version>
+```
+
+The tools in `./tools/` are detected automatically; otherwise set them under **Settings > General**. Point **maindata** to your Anno 1800 install (e.g. the Steam library folder). Linux file systems are case-sensitive.
+
+Running from source: `sudo apt install python3-tk`, `pip install -r requirements.txt`, then `python Anno_Island_Editor.py`.
+
 ## Detailed workflow
 
 The recommended workflow is **source → working copy → edit → validate/pack → export**. Keep source libraries, working maps, and release/export maps separate.

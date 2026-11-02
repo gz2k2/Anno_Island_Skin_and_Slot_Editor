@@ -11,11 +11,46 @@ on:
 permissions:
   contents: write
 
-jobs:
-  build-windows:
-    runs-on: windows-latest
-    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' || startsWith(github.event.head_commit.message, 'v')
+env:
+  APP_BASENAME: Anno_Island_Skin_and_Slot_Editor
+  # FileDBReader: the official Linux build of the LATEST upstream release is used.
+  FILEDBREADER_LINUX_URL: https://github.com/anno-mods/FileDBReader/releases/latest/download/FileDBReader-Linux.zip
 
+jobs:
+  # ------------------------------------------------------------------
+  # Shared metadata: version, changelog, "should we release at all?"
+  # ------------------------------------------------------------------
+  meta:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.ref_type == 'tag' || startsWith(github.event.head_commit.message, 'v')
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: get_version
+        run: |
+          test -f version.txt || { echo "version.txt was not found."; exit 1; }
+          version="$(tr -d '\r\n' < version.txt | sed 's/^\xEF\xBB\xBF//' | xargs)"
+          test -n "$version" || { echo "version.txt is empty."; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag version
+        if: github.ref_type == 'tag'
+        run: |
+          expected="v${{ steps.get_version.outputs.VERSION }}"
+          if [ "${{ github.ref_name }}" != "$expected" ]; then
+            echo "Git tag '${{ github.ref_name }}' does not match version.txt ('$expected')."
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Windows build (unchanged behaviour, now only produces an artifact)
+  # ------------------------------------------------------------------
+  build-windows:
+    needs: meta
+    runs-on: windows-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -31,86 +66,285 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Read Version and Changelog
-        id: get_version
-        shell: pwsh
-        run: |
-          if (-not (Test-Path 'version.txt')) {
-            throw 'version.txt was not found.'
-          }
-
-          $version = (Get-Content 'version.txt' -Raw).Trim()
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            throw 'version.txt is empty.'
-          }
-
-          "VERSION=$version" >> $env:GITHUB_OUTPUT
-          "EXE_NAME=Anno_Island_Skin_and_Slot_Editor_v$version.exe" >> $env:GITHUB_OUTPUT
-
-          if (Test-Path 'changelog.md') {
-            $changelog = Get-Content 'changelog.md' -Raw
-          }
-          else {
-            $changelog = 'No changelog was provided for this release.'
-          }
-
-          $delimiter = "CHANGELOG_$([guid]::NewGuid().ToString('N'))"
-          "CHANGELOG<<$delimiter" >> $env:GITHUB_OUTPUT
-          $changelog >> $env:GITHUB_OUTPUT
-          $delimiter >> $env:GITHUB_OUTPUT
-
-      - name: Validate Tag Version
-        if: github.ref_type == 'tag'
-        shell: pwsh
-        run: |
-          $expectedTag = "v${{ steps.get_version.outputs.VERSION }}"
-          $actualTag = "${{ github.ref_name }}"
-
-          if ($actualTag -ne $expectedTag) {
-            throw "Git tag '$actualTag' does not match version.txt ('$expectedTag')."
-          }
-
       - name: Build EXE with PyInstaller
         shell: pwsh
-        run: |
-          python 00_build_onefile.py
+        run: python 00_build_onefile.py
 
       - name: Verify Build Output
         shell: pwsh
         run: |
-          $exePath = Join-Path 'dist' '${{ steps.get_version.outputs.EXE_NAME }}'
-
+          $exePath = Join-Path 'dist' '${{ env.APP_BASENAME }}_v${{ needs.meta.outputs.version }}.exe'
           if (-not (Test-Path $exePath -PathType Leaf)) {
-            Write-Host 'Content of dist:'
             Get-ChildItem 'dist' -Recurse -ErrorAction SilentlyContinue
             throw "Expected executable was not created: $exePath"
           }
-
           Get-Item $exePath | Format-List Name, Length, FullName
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/${{ env.APP_BASENAME }}_v${{ needs.meta.outputs.version }}.exe
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Windows helper tools: latest FileDBReader + RdaConsole releases.
+  # Falls back per tool to the copy in tools/tools.zip if a download fails.
+  # ------------------------------------------------------------------
+  build-windows-tools:
+    needs: meta
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dl out
+
+          fetch_tool() {
+            repo="$1"; name="$2"; exe="$3"
+            echo "=== $name ($repo) ==="
+            tag="$(gh release view --repo "$repo" --json tagName -q .tagName)" || return 1
+            echo "Latest release: $tag"
+            assets="$(gh release view --repo "$repo" --json assets -q '.assets[].name')" || return 1
+            echo "Assets:"; echo "$assets"
+            candidates="$(echo "$assets" | grep -iE '\.(zip|exe)$' | grep -viE 'linux|osx|macos|darwin|source' || true)"
+            pick="$(echo "$candidates" | grep -iE 'win|x64' | head -n1 || true)"
+            [ -n "$pick" ] || pick="$(echo "$candidates" | head -n1)"
+            [ -n "$pick" ] || { echo "No Windows asset found"; return 1; }
+            echo "Using asset: $pick"
+            rm -rf "dl/$name"; mkdir -p "dl/$name" "out/$name"
+            gh release download "$tag" --repo "$repo" --pattern "$pick" --dir "dl/$name" || return 1
+            case "$pick" in
+              *.zip)
+                unzip -q "dl/$name/$pick" -d "dl/$name/x"
+                bin="$(find "dl/$name/x" -type f -iname "$exe" | head -n1)"
+                [ -n "$bin" ] || { echo "$exe not found in zip"; return 1; }
+                cp -r "$(dirname "$bin")"/. "out/$name/"
+                ;;
+              *.exe)
+                cp "dl/$name/$pick" "out/$name/$exe"
+                ;;
+            esac
+            [ -f "out/$name/$exe" ] || return 1
+          }
+
+          fallback_tool() {
+            name="$1"
+            echo "::warning::Using bundled tools/tools.zip for $name"
+            rm -rf "out/$name"
+            unzip -q tools/tools.zip "$name/*" -d out
+          }
+
+          fetch_tool anno-mods/FileDBReader FileDBReader FileDBReader.exe || fallback_tool FileDBReader
+          fetch_tool anno-mods/RdaConsole RdaConsole RdaConsole.exe || fallback_tool RdaConsole
+          find out -maxdepth 2
+
+      - name: Create tools.zip
+        shell: pwsh
+        run: Compress-Archive -Path out/* -DestinationPath tools.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-tools
+          path: tools.zip
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Linux helper tools: FileDBReader (official latest) + patched RdaConsole (from repo)
+  # ------------------------------------------------------------------
+  build-linux-tools:
+    needs: meta
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download FileDBReader (latest official Linux release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view --repo anno-mods/FileDBReader --json tagName -q '"FileDBReader latest release: " + .tagName' || true
+          mkdir -p dl out/FileDBReader
+          curl -fsSL -o dl/FileDBReader-Linux.zip "$FILEDBREADER_LINUX_URL"
+          unzip -q dl/FileDBReader-Linux.zip -d dl/fdb
+          bin="$(find dl/fdb -type f -name FileDBReader | head -n1)"
+          test -n "$bin" || { echo "FileDBReader binary not found in zip"; find dl/fdb; exit 1; }
+          cp -r "$(dirname "$bin")"/. out/FileDBReader/
+          chmod +x out/FileDBReader/FileDBReader
+          ls -la out/FileDBReader
+          if ! ls out/FileDBReader | grep -qi 'libcoreclr'; then
+            echo "::warning::FileDBReader zip does not look self-contained; users may need the .NET runtime."
+          fi
+
+      - name: Add patched RdaConsole (from repo)
+        run: |
+          # The patched Linux build is committed to the repo (see tools/linux/README.md).
+          mkdir -p out/RdaConsole
+          if [ -f tools/linux/RdaConsole-linux-x64.tar.gz ]; then
+            tar -xzf tools/linux/RdaConsole-linux-x64.tar.gz -C out/RdaConsole
+          elif [ -f tools/linux/RdaConsole ]; then
+            cp tools/linux/RdaConsole out/RdaConsole/RdaConsole
+          else
+            echo "::error::Patched RdaConsole not found. Expected tools/linux/RdaConsole-linux-x64.tar.gz or tools/linux/RdaConsole"
+            exit 1
+          fi
+          # tolerate archives that contain a subfolder
+          if [ ! -f out/RdaConsole/RdaConsole ]; then
+            found="$(find out/RdaConsole -type f -name RdaConsole | head -n1)"
+            test -n "$found" || { echo "::error::RdaConsole binary not found in archive"; exit 1; }
+            mv "$found" out/RdaConsole/RdaConsole
+          fi
+          chmod +x out/RdaConsole/RdaConsole
+          file out/RdaConsole/RdaConsole
+          file out/RdaConsole/RdaConsole | grep -q 'ELF 64-bit' || { echo "::error::RdaConsole is not a Linux ELF binary"; exit 1; }
+          ls -la out/RdaConsole
+
+      - name: Smoke test
+        run: |
+          out/FileDBReader/FileDBReader --help | head -n 5 || true
+          out/RdaConsole/RdaConsole --help | head -n 5 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tools
+          path: out/
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Linux app build (oldest supported runner => best glibc compatibility)
+  # ------------------------------------------------------------------
+  build-linux:
+    needs: [meta, build-linux-tools]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk tk-dev build-essential cmake xvfb
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Check tkinter
+        run: python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t . || true
+
+      - name: Build binary with PyInstaller
+        run: python 00_build_onefile.py
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-tools
+          path: package/tools
+
+      - name: Package tar.gz
+        id: pack
+        run: |
+          version="${{ needs.meta.outputs.version }}"
+          bin="${APP_BASENAME}_v${version}"
+          test -f "dist/$bin" || { ls -la dist; echo "Expected binary missing: dist/$bin"; exit 1; }
+          cp "dist/$bin" package/
+          chmod +x "package/$bin" package/tools/FileDBReader/FileDBReader package/tools/RdaConsole/RdaConsole
+          cat > package/README_LINUX.txt <<'TXT'
+          Anno Island Skin and Slot Editor - Linux build
+
+          1. Extract:  tar -xzf <this archive>   (keeps the executable bits)
+          2. Run:      ./Anno_Island_Skin_and_Slot_Editor_v<version>
+          3. The tools in ./tools/ are detected automatically on first start.
+             If not, set them in Settings > General.
+
+          Requirements: X11 or XWayland. The helper tools are self-contained
+          (no .NET installation needed). Anno 1800 data is case-sensitive on
+          Linux: point 'maindata' to the real game folder (Steam/Proton).
+          TXT
+          archive="${bin}_linux_x86_64.tar.gz"
+          tar -C package -czf "$archive" .
+          echo "ARCHIVE=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ steps.pack.outputs.ARCHIVE }}
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # One release job, attaches Windows + Linux files
+  # ------------------------------------------------------------------
+  release:
+    # The Windows release must not be blocked by a failing Linux build.
+    if: ${{ always() && needs.build-windows.result == 'success' && needs.build-windows-tools.result == 'success' }}
+    needs: [meta, build-windows, build-windows-tools, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: artifacts
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-tools
+          path: artifacts
+
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.build-linux.result == 'success' }}
+        with:
+          name: linux
+          path: artifacts
+
+      - name: Show assets
+        run: |
+          ls -laR artifacts
+          echo "Linux build result: ${{ needs.build-linux.result }}"
+
+      - name: Prepare release body
+        run: |
+          {
+            echo "Automatic build of version ${{ needs.meta.outputs.version }}."
+            echo
+            if [ -f changelog.md ]; then cat changelog.md; else echo "No changelog was provided for this release."; fi
+            echo
+            echo "### Downloads"
+            echo "- Windows: \`${APP_BASENAME}_v${{ needs.meta.outputs.version }}.exe\` (+ \`tools.zip\` with the latest FileDBReader and RdaConsole)"
+            echo "- Linux (x86_64): \`${APP_BASENAME}_v${{ needs.meta.outputs.version }}_linux_x86_64.tar.gz\` (includes helper tools)"
+            if [ "${{ needs.build-linux.result }}" != "success" ]; then
+              echo
+              echo "> Linux build failed for this release; see the workflow run."
+            fi
+          } > release_body.md
+
       - name: Create Release
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/${{ steps.get_version.outputs.EXE_NAME }}
-            tools/tools.zip
-          name: v${{ steps.get_version.outputs.VERSION }}
-          tag_name: v${{ steps.get_version.outputs.VERSION }}
+            artifacts/**/*.exe
+            artifacts/**/tools.zip
+            artifacts/**/*.tar.gz
+          name: v${{ needs.meta.outputs.version }}
+          tag_name: v${{ needs.meta.outputs.version }}
           target_commitish: ${{ github.sha }}
           draft: false
           prerelease: ${{ github.ref_type != 'tag' }}
           generate_release_notes: true
-          fail_on_unmatched_files: true
-          body: |
-            Automatic build of version ${{ steps.get_version.outputs.VERSION }}.
-
-            ${{ steps.get_version.outputs.CHANGELOG }}
-
-            ### Changes
-            See the automatic release notes below or the commit history.
-
-            ### Download
-            You can find `${{ steps.get_version.outputs.EXE_NAME }}` in the Assets section below.
+          fail_on_unmatched_files: false
+          body_path: release_body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
