@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.115.1]
+
+### Added
+- **Linux Compatibility**: Added native support/compatibility for Linux. Big thanks to Intetsch! (https://github.com/Intetsch)
+
+
 ## v0.114.25
 
 ### Slot Map
