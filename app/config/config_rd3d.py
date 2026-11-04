@@ -9,23 +9,168 @@ category tuple. Objects not listed here use DEFAULT_RD3D_CATEGORY.
 DEFAULT_RD3D_CATEGORY = "Other"
 
 RD3D_CATEGORIES = {
-    'Pebbles Ice': (
+    'Bushes Arctic large': (
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_01_large.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_03_large.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_high_02_large.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_high_02_var0.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_high_02_var1.prp',
+    ),
+    'Bushes Arctic medium': (
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_01_medium.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_02_medium.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_03_medium.prp',
+    ),
+    'Bushes Arctic small': (
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_01_small.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_02_small.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_03_small.prp',
+    ),
+    'Bushes Building Bushes': (
+        'data/graphics/props/terrain_props/building_deco_plants/building_bush_03.prp',
+        'data/graphics/props/terrain_props/building_deco_plants/building_bush_05.prp',
+    ),
+    'Bushes Enbesa Dead': (
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_01_01.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_01_02.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_02_01.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_02_02.prp',
+    ),
+    'Bushes Enbesa Dry large': (
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_01.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_02.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_03.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_04.prp',
+    ),
+    'Bushes Enbesa Dry medium': (
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_medium_01.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_medium_02.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_medium_03.prp',
+    ),
+    'Bushes Enbesa Dry small': (
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_small_01.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_small_02.prp',
+        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_small_03.prp',
+    ),
+    'Bushes Jungle large': (
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_02_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_large_mountain.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_04_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_05_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_01.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_01_var2.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_02.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_02_var2.prp',
+    ),
+    'Bushes Jungle medium': (
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01_medium.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_02_medium.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_medium.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_medium_mountain.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_04_medium.prp',
+    ),
+    'Bushes Jungle small': (
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01_small.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_02_small.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_small.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_04_small.prp',
+    ),
+    'Bushes Moderate large': (
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_01_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_02_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_03_large.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_01_var0.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_01_var1.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_02_var0.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_02_var1.prp',
+    ),
+    'Bushes Moderate medium': (
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_01_medium.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_02_medium.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_03_medium.prp',
+    ),
+    'Bushes Moderate small': (
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_01_small.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_02_small.prp',
+        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_03_small.prp',
+    ),
+    'Flowers Jungle': (
+        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_01.prp',
+        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_02.prp',
+        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_03.prp',
+        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_04.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_01.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_02.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_03.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_04.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_05.prp',
+    ),
+    'Flowers Moderate': (
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_01.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_02.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_03.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_04.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_05.prp',
+    ),
+    'Grass Arctic': (
+        'data/dlc03/graphics/props/terrain_props/vegetation/grass/grass_arctic_01.prp',
+    ),
+    'Grass Enbesa Dry': (
+        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_06.prp',
+        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_07.prp',
+        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_08.prp',
+        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_09.prp',
+    ),
+    'Grass Jungle': (
+        'data/graphics/props/terrain_props/vegetation/grass/grass_jungle_01.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/grass_jungle_04.prp',
+    ),
+    'Grass Moderate': (
+        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_01.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_02.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_03.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_04.prp',
+        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_05.prp',
+    ),
+    'Grass Moderate Reeds': (
+        'data/graphics/props/terrain_props/vegetation/grass/grass_reed_moderate_01.prp',
+    ),
+    'Iceberg Arctic': (
+        'data/dlc03/graphics/props/terrain_props/vegetation/ice/icebergs/iceberg_01.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/ice/icebergs/iceberg_02.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/ice/icebergs/iceberg_03.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/ice/icebergs/iceberg_04.prp',
+    
+    ),
+    'Icefloe Arctic': (
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_01.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_02.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_03.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_04.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_05.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_06.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_07.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_08.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_09.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_10.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_11.prp',
+        'data/dlc03/graphics/landscape/terrain/decals/ice_floes/icefloe_arctic_coast_fine_12.prp',
+    ),
+    'Pebbles Arctic (Ice)': (
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_ice/pebbles_ice_01.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_ice/pebbles_ice_02.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_ice/pebbles_ice_03.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_ice/pebbles_ice_04.prp',
     ),
-    'Pebbles Snow': (
+    'Pebbles Arctic (Snow)': (
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_snow/pebbles_snow_01.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_snow/pebbles_snow_02.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_snow/pebbles_snow_03.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/pebbles_snow/pebbles_snow_04.prp',
-    ),
-    'Pebbles Jungle': (
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_01.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_02.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_03.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_04.prp',
     ),
     'Pebbles Enbesa': (
         'data/dlc06/graphics/props/terrain_props/rocks/pebbles_colony02/pebbles_01.prp',
@@ -33,19 +178,28 @@ RD3D_CATEGORIES = {
         'data/dlc06/graphics/props/terrain_props/rocks/pebbles_colony02/pebbles_03.prp',
         'data/dlc06/graphics/props/terrain_props/rocks/pebbles_colony02/pebbles_04.prp',
     ),
-    'Pebbles': (
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_01.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_02.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_03.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_04.prp',
-    ),
     'Pebbles Enbesa (reddish)': (
         'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_01.prp',
         'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_02.prp',
         'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_03.prp',
         'data/dlc10/scenario02/graphics/props/terrain_props/rocks/pebbles_dlc10_scenario02/pebbles_04.prp',
     ),
-    'Rocks Ice': (
+    'Pebbles Jungle': (
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_01.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_02.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_03.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles_jungle/pebbles_jungle_04.prp',
+    ),
+    'Pebbles Moderate': (
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_01.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_02.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_03.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_pebbles/pebbles_04.prp',
+    ),
+    'Rocks': (
+        'data/graphics/props/terrain_props/rocks/rock_anno_union/rock_anno_union_02.prp',
+    ),
+    'Rocks Arctic (Ice)': (
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_01.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_02.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_03.prp',
@@ -58,6 +212,7 @@ RD3D_CATEGORIES = {
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_10.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_11.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_12.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_13.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_14.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_15.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_16.prp',
@@ -69,7 +224,7 @@ RD3D_CATEGORIES = {
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_22.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_ice/rock_ice_23.prp',
     ),
-    'Rocks Snow No Skirt': (
+    'Rocks Arctic (Snow No Skirt)': (
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_01.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_02.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_03.prp',
@@ -77,6 +232,7 @@ RD3D_CATEGORIES = {
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_05.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_06.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_07.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_08.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_09.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_10.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_11.prp',
@@ -93,7 +249,7 @@ RD3D_CATEGORIES = {
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_22.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow_noskirt/rock_snow_noskirt_23.prp',
     ),
-    'Rocks Snow': (
+    'Rocks Arctic (Snow)': (
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_01.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_02.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_03.prp',
@@ -101,7 +257,9 @@ RD3D_CATEGORIES = {
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_05.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_06.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_07.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_08.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_09.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_10.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_11.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_12.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_13.prp',
@@ -114,7 +272,65 @@ RD3D_CATEGORIES = {
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_20.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_21.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_22.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/rocks/rocks_snow/rock_snow_23.prp',
     ),
+    'Rocks Cave': (
+        'data/graphics/props/terrain_props/rocks/rocks_cave/rocks_cave_sand.prp',
+    ),
+    'Rocks Coast': (
+        'data/graphics/props/terrain_props/rocks/rocks_coast/rock_coast_01.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_coast/rock_coast_02.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_coast/rock_coast_03.prp',
+    ),
+    'Rocks Decoration': (
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_02.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_03.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_04.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_06.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_07.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_08.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_09.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_13.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_14.prp',
+        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_15.prp',
+    ),
+    'Rocks Enbesa': (
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_01.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_02.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_03.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_04.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_05.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_06.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_07.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_08.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_09.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_10.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_11.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_12.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_13.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_14.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_15.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_16.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_17.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_18.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_19.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_20.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_21.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_22.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_23.prp',
+    ),
+    'Rocks Enbesa (reddish)': (
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_01.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_02.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_03.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_04.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_05.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_06.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_07.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_08.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_09.prp',
+        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_10.prp',
+    ),    
     'Rocks Jungle': (
         'data/graphics/props/terrain_props/rocks/rocks_jungle/rock_jungle_01.prp',
         'data/graphics/props/terrain_props/rocks/rocks_jungle/rock_jungle_02.prp',
@@ -139,31 +355,6 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/rocks/rocks_jungle/rock_jungle_21.prp',
         'data/graphics/props/terrain_props/rocks/rocks_jungle/rock_jungle_22.prp',
         'data/graphics/props/terrain_props/rocks/rocks_jungle/rock_jungle_23.prp',
-    ),
-    'Rocks Enbesa': (
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_01.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_02.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_03.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_04.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_05.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_06.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_07.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_08.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_09.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_10.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_01.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_02.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_04.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_14.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_15.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_16.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_17.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_18.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_19.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_20.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_21.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_22.prp',
-        'data/dlc06/graphics/props/terrain_props/rocks/rocks_colony02/rock_colony02_moderate_23.prp',
     ),
     'Rocks Moderate': (
         'data/dlc01/graphics/props/terrain_props/vegetation/rocks/rock_moderate_03.prp',
@@ -191,170 +382,20 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/rocks/rocks_moderate/rock_moderate_22.prp',
         'data/graphics/props/terrain_props/rocks/rocks_moderate/rock_moderate_23.prp',
     ),
-    'Rocks Coast': (
-        'data/graphics/props/terrain_props/rocks/rocks_coast/rock_coast_01.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_coast/rock_coast_02.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_coast/rock_coast_03.prp',
+    'Tree Arctic Fir Trees Snow': (
+        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_01.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_02.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_03.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_04.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_05.prp',
+        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_06.prp',
     ),
-    'Rocks Decoration': (
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_02.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_03.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_04.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_06.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_07.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_08.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_09.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_13.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_14.prp',
-        'data/graphics/props/terrain_props/rocks/rocks_decoration/rocks_decoration_15.prp',
-    ),
-    'Rocks Cave': (
-        'data/graphics/props/terrain_props/rocks/rocks_cave/rocks_cave_sand.prp',
-    ),
-    'Rocks': (
-        'data/graphics/props/terrain_props/rocks/rock_anno_union/rock_anno_union_02.prp',
-    ),
-    'Underwater Plants': (
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_01.prp',
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_02.prp',
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_03.prp',
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_04.prp',
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_05.prp',
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_06.prp',
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_07.prp',
-        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_08.prp',
-    ),
-    'Bushes Arctic small': (
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_01_small.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_02_small.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_03_small.prp',
-    ),
-    'Bushes Arctic medium': (
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_01_medium.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_02_medium.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_03_medium.prp',
-    ),
-    'Bushes Arctic large': (
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_01_large.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_03_large.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_high_02_large.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_high_02_var0.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/bushes/bush_arctic_high_02_var1.prp',
-    ),
-    'Bushes Dry small': (
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_small_01.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_small_02.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_small_03.prp',
-    ),
-    'Bushes Dry medium': (
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_medium_01.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_medium_02.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_medium_03.prp',
-    ),
-    'Bushes Dry large': (
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_01.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_02.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_03.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_04.prp',
-    ),
-    'Bushes Dead': (
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_01_01.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_01_02.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_02_01.prp',
-        'data/dlc06/graphics/props/terrain_props/bushes/bushes_dead/bush_dead_02_02.prp',
-    ),
-    'Bushes Jungle small': (
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01_small.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_02_small.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_small.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_04_small.prp',
-    ),
-    'Bushes Jungle medium': (
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01_medium.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_02_medium.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_medium.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_medium_mountain.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_04_medium.prp',
-    ),
-    'Bushes Jungle large': (
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_01_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_02_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_03_large_mountain.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_04_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_05_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_01.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_01_var2.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_02.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_jungle_high_02_var2.prp',
-    ),
-    'Bushes Moderate small': (
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_01_small.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_02_small.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_03_small.prp',
-    ),
-    'Bushes Moderate medium': (
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_01_medium.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_02_medium.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_03_medium.prp',
-    ),
-    'Bushes Moderate large': (
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_01_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_02_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_03_large.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_01_var0.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_01_var1.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_02_var0.prp',
-        'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_high_02_var1.prp',
-    ),
-    'Bushes Building Bushes': (
-        'data/graphics/props/terrain_props/building_deco_plants/building_bush_03.prp',
-        'data/graphics/props/terrain_props/building_deco_plants/building_bush_05.prp',
-    ),
-    'Flowers Jungle': (
-        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_01.prp',
-        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_02.prp',
-        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_03.prp',
-        'data/graphics/props/terrain_props/building_deco_plants/flowers_jungle_04.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_01.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_02.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_03.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_04.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_jungle_05.prp',
-    ),
-    'Flowers Moderate': (
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_01.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_02.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_03.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_04.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/flowers_moderate_05.prp',
-    ),
-    'Flowers Decoration Pots': (
-        'data/graphics/props/decoration/flower_pot.prp',
-        'data/graphics/props/decoration/flower_pot_02.prp',
-        'data/graphics/props/decoration/flower_pot_03.prp',
-    ),
-    'Grass Dry': (
-        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_06.prp',
-        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_07.prp',
-        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_08.prp',
-        'data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_09.prp',
-    ),
-    'Grass Jungle': (
-        'data/graphics/props/terrain_props/vegetation/grass/grass_jungle_01.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/grass_jungle_04.prp',
-    ),
-    'Grass Moderate': (
-        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_01.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_02.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_03.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_04.prp',
-        'data/graphics/props/terrain_props/vegetation/grass/grass_moderate_05.prp',
-    ),
-    'Grass Moderate Reeds': (
-        'data/graphics/props/terrain_props/vegetation/grass/grass_reed_moderate_01.prp',
+    'Tree Dead Burned': (
+        'data/graphics/campaign/burned_trees/burned_tree_ground_01.prp',
+        'data/graphics/campaign/burned_trees/burned_tree_stump_01.prp',
+        'data/graphics/campaign/burned_trees/burned_tree_stump_02.prp',
+        'data/graphics/campaign/burned_trees/burned_tree_large_01.prp',
+        'data/graphics/campaign/burned_trees/burned_tree_large_02.prp',
     ),
     'Tree Dead Stumps': (
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_ground_01.prp',
@@ -367,28 +408,49 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_stump_04_grey.prp',
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_stump_top_03.prp',
     ),
-    'Tree Dead Burned': (
-        'data/graphics/campaign/burned_trees/burned_tree_ground_01.prp',
-        'data/graphics/campaign/burned_trees/burned_tree_stump_01.prp',
-        'data/graphics/campaign/burned_trees/burned_tree_stump_02.prp',
-        'data/graphics/campaign/burned_trees/burned_tree_large_01.prp',
-        'data/graphics/campaign/burned_trees/burned_tree_large_02.prp',
-    ),
-    'Tree Dead Stumps Enbesa': (
+    'Tree Enbesa Dead Stumps': (
         'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_ground_01.prp',
         'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_stump_03.prp',
         'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_stump_03_grey.prp',
         'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_stump_04.prp',
         'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_stump_top_03.prp',
     ),
-    'Tree Dead Trees Snow': (
+    'Tree Dead Trees': (
+        'data/graphics/props/terrain_props/vegetation/trees/dead/dead_tree_var03_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_large_01.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_large_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_01.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_03.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_04.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_01.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_03.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_04.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var03_01.prp',
+    ),
+    'Tree Arctic Dead Trees Snow': (
         'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_dead_snow_01.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_dead_snow_02.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_dead_snow_ground_01.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_dead_snow_ground_03.prp',
         'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_dead_snow_stump_01.prp',
     ),
-    'Tree Dead Trees Jungle': (
+    'Tree Enbesa Dead Trees': (
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_01_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_02_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_01_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_02_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_01_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_02_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_01_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_02_dead_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_large_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_var02_02.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_var02_03.prp',
+        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_var02_04.prp',
+    ),
+    'Tree Jungle Dead Trees': (
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_jungle_stump_01.prp',
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_jungle_stump_b_01.prp',
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_jungle_stump_b_02.prp',
@@ -405,33 +467,41 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_jungle_palm_02.prp',
         'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_jungle_palm_03.prp',
     ),
-    'Tree Dead Trees Enbesa': (
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_01_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_02_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_01_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_02_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_01_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_large_02_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_01_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/acacia_medium_02_dead_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_large_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_var02_02.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_var02_03.prp',
-        'data/dlc06/graphics/props/terrain_props/trees_dead/tree_dead_var02_04.prp',
+    'Tree Decoration Palm Leaves': (
+        'data/graphics/props/decoration/palm_leaf_sheet_01.prp',
+        'data/graphics/props/decoration/palm_leaf_sheet_02.prp',
     ),
-    'Tree Dead Trees': (
-        'data/graphics/props/terrain_props/vegetation/trees/dead/dead_tree_var03_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_large_01.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_large_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_01.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_03.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var01_04.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_01.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_03.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var02_04.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/dead/tree_dead_var03_01.prp',
+    'Tree Decoration Trees': (
+        'data/graphics/props/terrain_props/building_deco_plants/building_deco_tree_01.prp',
+        'data/graphics/props/terrain_props/building_deco_plants/building_deco_tree_colony_01.prp',
+        'data/graphics/props/terrain_props/building_deco_plants/building_deco_tree_colony_02.prp',
+    ),
+    'Tree Enbesa Acacia large': (
+        'data/dlc06/graphics/props/terrain_props/trees/acacia_large_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees/acacia_large_02.prp',
+    ),
+    'Tree Enbesa Acacia medium': (
+        'data/dlc06/graphics/props/terrain_props/trees/acacia_medium_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees/acacia_medium_02.prp',
+    ),
+    'Tree Enbesa Acacia small': (
+        'data/dlc06/graphics/props/terrain_props/trees/acacia_small_01.prp',
+    ),
+    'Tree Enbesa Baobab Trees': (
+        'data/dlc06/graphics/props/terrain_props/trees/baobab_tree_large_01.prp',
+    ),
+    'Tree Enbesa Orange Trees': (
+        'data/dlc06/graphics/props/terrain_props/trees/orange_tree_01.prp',
+        'data/dlc06/graphics/props/terrain_props/trees/orange_tree_02.prp',
+    ),
+    'Tree Enbesa Stone Pine large': (
+        'data/dlc06/graphics/props/terrain_props/trees/stone_pine_large_01.prp',
+    ),
+    'Tree Enbesa Stone Pine medium': (
+        'data/dlc06/graphics/props/terrain_props/trees/stone_pine_medium_01.prp',
+    ),
+    'Tree Enbesa Stone Pine small': (
+        'data/dlc06/graphics/props/terrain_props/trees/stone_pine_small_01.prp',
     ),
     'Tree Jungle Large': (
         'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_large_01.prp',
@@ -451,15 +521,11 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_large_05_02.prp',
         'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_large_05_03.prp',
     ),
-    'Tree Jungle Very Large': (
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_01.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_03.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_03_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_04.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_04_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_05.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_05_02.prp',
+    'Tree Jungle Mountain Trees': (
+        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_01.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_03.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_04.prp',
     ),
     'Tree Jungle Palms': (
         'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_palm_01.prp',
@@ -481,51 +547,20 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_palm_special_01.prp',
         'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_palm_special_02.prp',
     ),
-    'Tree Jungle Mountain Trees': (
-        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_01.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_02.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_03.prp',
-        'data/graphics/props/terrain_props/vegetation/trees/jungle_mountain/mountain_jungle_tree_04.prp',
+    'Tree Jungle Very Large': (
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_01.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_03.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_03_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_04.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_04_02.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_05.prp',
+        'data/graphics/props/terrain_props/vegetation/trees/jungle/tree_jungle_very_large_05_02.prp',
     ),
-    'Tree Acacia small': (
-        'data/dlc06/graphics/props/terrain_props/trees/acacia_small_01.prp',
-    ),
-    'Tree Acacia medium': (
-        'data/dlc06/graphics/props/terrain_props/trees/acacia_medium_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees/acacia_medium_02.prp',
-    ),
-    'Tree Acacia large': (
-        'data/dlc06/graphics/props/terrain_props/trees/acacia_large_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees/acacia_large_02.prp',
-    ),
-    'Tree Stone Pine small': (
-        'data/dlc06/graphics/props/terrain_props/trees/stone_pine_small_01.prp',
-    ),
-    'Tree Stone Pine medium': (
-        'data/dlc06/graphics/props/terrain_props/trees/stone_pine_medium_01.prp',
-    ),
-    'Tree Stone Pine large': (
-        'data/dlc06/graphics/props/terrain_props/trees/stone_pine_large_01.prp',
-    ),
-    'Tree Baobab Trees': (
-        'data/dlc06/graphics/props/terrain_props/trees/baobab_tree_large_01.prp',
-    ),
-    'Tree Orange Trees': (
-        'data/dlc06/graphics/props/terrain_props/trees/orange_tree_01.prp',
-        'data/dlc06/graphics/props/terrain_props/trees/orange_tree_02.prp',
-    ),
-    'Tree Cypress Trees': (
+    'Tree Moderate Cypress Trees': (
         'data/dlc01/graphics/props/terrain_props/vegetation/trees/moderate/cypress_tree_01.prp',
         'data/dlc01/graphics/props/terrain_props/vegetation/trees/moderate/cypress_tree_02.prp',
         'data/dlc01/graphics/props/terrain_props/vegetation/trees/moderate/cypress_tree_03.prp',
-    ),
-    'Tree Fir Trees Snow': (
-        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_01.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_02.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_03.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_04.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_05.prp',
-        'data/dlc03/graphics/props/terrain_props/vegetation/trees/tree_fir_snow_06.prp',
     ),
     'Tree Moderate Fir Trees': (
         'data/graphics/props/terrain_props/vegetation/trees/moderate/tree_fir_01_var0.prp',
@@ -568,16 +603,19 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/vegetation/trees/moderate/tree_moderate_11_var0.prp',
         'data/graphics/props/terrain_props/vegetation/trees/moderate/tree_moderate_11_var1.prp',
     ),
-    'Tree Decoration Trees': (
-        'data/graphics/props/terrain_props/building_deco_plants/building_deco_tree_01.prp',
-        'data/graphics/props/terrain_props/building_deco_plants/building_deco_tree_colony_01.prp',
-        'data/graphics/props/terrain_props/building_deco_plants/building_deco_tree_colony_02.prp',
+    'Underwater Plants': (
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_01.prp',
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_02.prp',
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_03.prp',
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_04.prp',
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_05.prp',
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_06.prp',
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_07.prp',
+        'data/graphics/props/terrain_props/vegetation/water/underwater_plant_08.prp',
     ),
-    'Tree Decoration Palm Leaves': (
-        'data/graphics/props/decoration/palm_leaf_sheet_01.prp',
-        'data/graphics/props/decoration/palm_leaf_sheet_02.prp',
-    ),
-    'Deco Fences': (
+
+    #   Decoration Props
+    'Deco Fences and Walls': (
         'data/dlc06/graphics/props/fences/farm_field_fences/farm_field_fence_01_low_01/addon_01_fence_element_curve_01.prp',
         'data/dlc06/graphics/props/fences/farm_field_fences/farm_field_fence_01_low_01/addon_01_fence_element_pole_01.prp',
         'data/dlc06/graphics/props/fences/farm_field_fences/farm_field_fence_01_low_01/addon_01_fence_element_side_02.prp',
@@ -606,6 +644,11 @@ RD3D_CATEGORIES = {
         'data/graphics/props/fences/white_wall_curved.prp',
         'data/graphics/props/fences/white_wall_half.prp',
         'data/graphics/props/fences/white_wall_straight.prp',
+    ),
+    'Deco Flowers Decoration Pots': (
+        'data/graphics/props/decoration/flower_pot.prp',
+        'data/graphics/props/decoration/flower_pot_02.prp',
+        'data/graphics/props/decoration/flower_pot_03.prp',
     ),
     'Deco Furniture Bookshelves': (
         'data/dlc06/graphics/props/furniture/book_01.prp',
@@ -820,22 +863,19 @@ RD3D_CATEGORIES = {
         'data/graphics/props/decoration/tool_hut_01.prp',
         'data/graphics/props/decoration/well_01.prp',
     ),
-    'Cactuses': (
+    'Plant Cactuses': (
         'data/dlc10/graphics/props/terrain_props/cactuses/cactus_01.prp',
         'data/dlc10/graphics/props/terrain_props/cactuses/cactus_02.prp',
         'data/dlc10/graphics/props/terrain_props/cactuses/cactus_03.prp',
         'data/dlc10/graphics/props/terrain_props/cactuses/cactus_04.prp',
     ),
-    'Building Decals': (
+    'Deco Building Decals': (
         'data/graphics/buildings/production/factory_11/factory_11_slot_decal_detail01.prp',
         'data/graphics/buildings/production/mining_01/mining_01_middle_decal_detail01.prp',
         'data/graphics/buildings/production/mining_01/mining_01_right_decal_detail01.prp',
     ),
-    'Advertisements': (
+    'Deco Advertisements': (
         'data/graphics/props/advertiser/prop/advertiser_03_poster_04.prp',
-    ),
-    'Grass Arctic': (
-        'data/dlc03/graphics/props/terrain_props/vegetation/grass/grass_arctic_01.prp',
     ),
 }
 
@@ -854,61 +894,30 @@ for _category, _objects in RD3D_CATEGORIES.items():
             )
         RD3D_OBJECT_CATEGORY_BY_PATH[_normalized] = _category
 
-# Region metadata is derived from the source-region field in database_props.py.
-# A database row may contain multiple comma-separated source regions.
-RD3D_REGION_BY_SOURCE_CATEGORY = {
-    "moderate": "Old World",
-    "colony01": "New World",
-    "colony02": "Enbesa",
-    "colony03": "Arctic",
-    "ggj": "New World",
-    "scenario02": "Enbesa",
-    "scenario03": "New World",
-    "scenario04": "New World",
-
-}
+# Region filters are derived exclusively from the configured category name.
+# database_props source-region metadata is deprecated and is never consulted here.
 RD3D_REGIONS = ("Old World", "New World", "Enbesa", "Arctic")
+RD3D_CATEGORY_REGION_TOKENS = (
+    ("enbesa", "Enbesa"),
+    ("arctic", "Arctic"),
+    ("moderate", "Old World"),
+    ("jungle", "New World"),
+)
 
-def _rd3d_source_categories(value):
-    return tuple(part.strip().casefold() for part in str(value or "").split(",") if part.strip())
-
-def _rd3d_regions_from_source_category(value):
-    return tuple(dict.fromkeys(
-        RD3D_REGION_BY_SOURCE_CATEGORY[source]
-        for source in _rd3d_source_categories(value)
-        if source in RD3D_REGION_BY_SOURCE_CATEGORY
-    ))
-
-# Import here so RD3D_CATEGORIES is already defined and database_props stays independent.
-from app.database.database_props import RD3D_OBJECT_DATABASE
-
-RD3D_OBJECT_REGIONS_BY_PATH = {}
-for _source_category, _path, _count in RD3D_OBJECT_DATABASE:
-    _normalized = str(_path or "").strip().replace("\\", "/").casefold()
-    if not _normalized:
-        continue
-    _regions = RD3D_OBJECT_REGIONS_BY_PATH.setdefault(_normalized, set())
-    _regions.update(_rd3d_regions_from_source_category(_source_category))
-
-RD3D_CATEGORY_REGIONS = {category: set() for category in RD3D_CATEGORIES}
-for _path, _category in RD3D_OBJECT_CATEGORY_BY_PATH.items():
-    RD3D_CATEGORY_REGIONS.setdefault(_category, set()).update(
-        RD3D_OBJECT_REGIONS_BY_PATH.get(_path, ())
-    )
-RD3D_CATEGORY_REGIONS = {
-    category: tuple(region for region in RD3D_REGIONS if region in regions)
-    for category, regions in RD3D_CATEGORY_REGIONS.items()
-}
-
-def rd3d_regions_for_object(path):
-    """Return all game regions in which the object occurs according to the database."""
-    normalized = str(path or "").strip().replace("\\", "/").casefold()
-    regions = RD3D_OBJECT_REGIONS_BY_PATH.get(normalized, ())
-    return tuple(region for region in RD3D_REGIONS if region in regions)
 
 def rd3d_regions_for_category(category):
-    """Return all game regions represented by objects of an RD3D category."""
-    return RD3D_CATEGORY_REGIONS.get(str(category or "").strip(), ())
+    name = str(category or "").strip().casefold()
+    return tuple(region for token, region in RD3D_CATEGORY_REGION_TOKENS if token in name)
+
+
+RD3D_CATEGORY_REGIONS = {
+    category: rd3d_regions_for_category(category)
+    for category in RD3D_CATEGORIES
+}
+
+
+def rd3d_regions_for_object(path):
+    return rd3d_regions_for_category(rd3d_category_for_object(path))
 
 def rd3d_category_for_object(path):
     """Return the configured category for one complete object path."""

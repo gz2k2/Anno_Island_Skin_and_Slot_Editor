@@ -21,6 +21,7 @@ import copy
 import hashlib
 import os
 import queue
+import re
 import tempfile
 import threading
 import tkinter as tk
@@ -668,7 +669,9 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         result = []
         for row in get_combined_category_rows(self.CONFIG_FILE):
             category = row["category"]
-            regions = row["regions"]
+            # Mass Replace must use the category-name region convention directly.
+            # Do not trust cached or database-derived category row metadata here.
+            regions = tuple(rd3d_regions_for_category(category))
             result.append({
                 "category": category,
                 "display_category": display_category(category, self.CONFIG_FILE),
@@ -817,6 +820,86 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         ).grid(row=0, column=1, sticky="e")
         PopupTemplate.schedule(popup, 50, lambda: PopupTemplate.safe_activate(popup))
 
+    @staticmethod
+    def _object_mass_replace_family(category):
+        """Return the number-preserving family for Rocks/Pebbles categories."""
+        first_word = str(category or "").strip().split(maxsplit=1)
+        family = first_word[0].casefold() if first_word else ""
+        return family if family in {"rocks", "pebbles"} else None
+
+    @staticmethod
+    def _object_mass_replace_file_number(path):
+        """Return the final numeric filename suffix, e.g. rock_07.prp -> 7."""
+        match = re.search(r"_(\d+)$", Path(str(path or "")).stem)
+        return int(match.group(1)) if match else None
+
+    @staticmethod
+    def _object_mass_replace_reddish_rock_numbers():
+        """Variant mapping between Rocks Enbesa reddish (10) and 23-rock sets."""
+        return {
+            1: (11,),
+            2: (11,),
+            3: (1, 6, 19),
+            4: (4, 5),
+            5: (9,),
+            6: (3, 12, 13, 16, 20, 22, 23),
+            7: (4,),
+            8: (3, 12, 13, 16, 20, 22, 23),
+            9: (20,),
+            10: (6,),
+        }
+
+    @staticmethod
+    def _object_mass_replace_is_enbesa_reddish(category):
+        return str(category or "").strip().casefold() == "rocks enbesa reddish"
+
+    def _object_mass_replace_target(self, source_path, from_type, to_type, targets, used_target_numbers=None):
+        """Preserve rock variants; avoid duplicate reddish variants when possible."""
+        source_family = self._object_mass_replace_family(from_type)
+        target_family = self._object_mass_replace_family(to_type)
+        if source_family is not None and source_family == target_family:
+            source_number = self._object_mass_replace_file_number(source_path)
+            if source_number is None:
+                return random.choice(targets)
+
+            from_reddish = self._object_mass_replace_is_enbesa_reddish(from_type)
+            to_reddish = self._object_mass_replace_is_enbesa_reddish(to_type)
+            if from_reddish != to_reddish:
+                mapping = self._object_mass_replace_reddish_rock_numbers()
+                if from_reddish:
+                    # 10-variant reddish -> any of its approved 23-set equivalents.
+                    allowed = mapping.get(source_number, ())
+                else:
+                    # 23-set -> reddish: invert the same mapping. Ambiguous 11 maps
+                    # randomly to reddish 1 or 2, 4 maps to 4 or 7, 6 maps to 3 or 10,
+                    # 20 maps to 6/8/9, etc., preserving all user-defined relations.
+                    allowed = tuple(
+                        reddish for reddish, normal_numbers in mapping.items()
+                        if source_number in normal_numbers
+                    )
+                matching = [target for target in targets
+                            if self._object_mass_replace_file_number(target) in allowed]
+                if matching:
+                    # When converting to or from Rocks Enbesa reddish, prefer an allowed
+                    # target variant that has not already been assigned in this
+                    # Mass Replace run. Reuse only when the mapping offers no unused
+                    # alternative for the current source variant.
+                    if used_target_numbers is not None:
+                        unused = [target for target in matching
+                                  if self._object_mass_replace_file_number(target)
+                                  not in used_target_numbers]
+                        if unused:
+                            return random.choice(unused)
+                    return random.choice(matching)
+                return random.choice(targets)
+
+            # All other Rocks/Pebbles families keep the established 1:1 number.
+            for target in targets:
+                if self._object_mass_replace_file_number(target) == source_number:
+                    return target
+            return random.choice(targets)
+        return None
+
     def _save_object_mass_replace_popup(self, number):
         mappings = getattr(self, "_object_mass_replace_mappings", ())
         selected = []
@@ -843,16 +926,38 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             return
         rows = self.object_configuration_table1_rows if number == 1 else self.object_configuration_table2_rows
         changed = 0
-        for from_type, _to_type, targets in selected:
+        for from_type, to_type, targets in selected:
             source_rows = [
                 row for row in rows
                 if self._classify_object_configuration_path(
                     (row[2] if number == 1 else row[4]).get().strip()
                 ) == from_type
             ]
+            preserve_numbers = (
+                self._object_mass_replace_family(from_type) is not None
+                and self._object_mass_replace_family(from_type)
+                == self._object_mass_replace_family(to_type)
+            )
+            used_target_numbers = (set() if (
+                self._object_mass_replace_is_enbesa_reddish(from_type)
+                or self._object_mass_replace_is_enbesa_reddish(to_type)
+            ) else None)
             for offset, row in enumerate(source_rows):
                 variable = row[2] if number == 1 else row[4]
-                variable.set(targets[offset % len(targets)])
+                source_path = variable.get().strip()
+                target = self._object_mass_replace_target(
+                    source_path, from_type, to_type, targets,
+                    used_target_numbers=used_target_numbers,
+                )
+                if used_target_numbers is not None and target:
+                    target_number = self._object_mass_replace_file_number(target)
+                    if target_number is not None:
+                        used_target_numbers.add(target_number)
+                # Keep the existing distribution for all category families except
+                # Rocks->Rocks and Pebbles->Pebbles.
+                if target is None and not preserve_numbers:
+                    target = targets[offset % len(targets)]
+                variable.set(target)
                 changed += 1
         getattr(self, f"_render_object_configuration_table_{number}")()
         self.status_var.set(

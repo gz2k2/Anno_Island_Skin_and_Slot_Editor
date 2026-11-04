@@ -8,6 +8,7 @@ import time
 from app.config.config_rd3d import (
     DEFAULT_RD3D_CATEGORY, RD3D_CATEGORIES, RD3D_REGIONS,
     rd3d_category_for_object, rd3d_regions_for_object,
+    rd3d_regions_for_category,
 )
 from app.database.database_props import RD3D_OBJECT_DATABASE
 
@@ -144,9 +145,11 @@ def _snapshot(config_file):
         and row["category"].casefold() not in custom_categories
     }
 
+    # database_props is only the built-in object inventory. Its deprecated source/region
+    # column is deliberately discarded; region filters come from category names only.
     database = tuple(
-        (source, path, count)
-        for source, path, count in RD3D_OBJECT_DATABASE
+        ("", path, count)
+        for _deprecated_source_region, path, count in RD3D_OBJECT_DATABASE
         if str(path or "").strip().casefold() not in by_path
     ) + tuple((row["region"], row["object"], 0) for row in objects)
 
@@ -176,7 +179,9 @@ def _snapshot(config_file):
             object_regions = _split_values(custom_row["region"])
         else:
             category = rd3d_category_for_object(path) or DEFAULT_RD3D_CATEGORY
-            object_regions = tuple(rd3d_regions_for_object(path))
+            # Built-in region filtering is encoded in the category name only.
+            # Categories without Enbesa/Arctic/Moderate/Jungle remain All-only.
+            object_regions = tuple(rd3d_regions_for_category(category))
         path_categories[key] = category
         path_regions[key] = object_regions
         category_paths.setdefault(category, set()).add(key)

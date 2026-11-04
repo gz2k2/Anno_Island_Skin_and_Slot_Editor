@@ -357,6 +357,17 @@ def _object_container(root):
     return max(candidates, key=lambda item: item[0])[1]
 
 
+def _game_object_container(root):
+    """Return the native runtime container for resource/mining slot objects."""
+    for game_object in root.iter():
+        if local_tag(game_object) != "GameObject":
+            continue
+        objects = child(game_object, "objects")
+        if objects is not None:
+            return objects
+    raise ValueError("Gamedata XML has no <GameObject>/<objects> container.")
+
+
 def build_gamedata_slot_patch(original_tree, current_tree):
     original = _object_records(original_tree.getroot())
     current = _object_records(current_tree.getroot())
@@ -381,18 +392,17 @@ def apply_gamedata_slots(tree, payload):
         if record is not None:
             record[0].remove(record[1])
     records = _object_records(tree.getroot())
-    container = _object_container(tree.getroot())
+    container = _game_object_container(tree.getroot())
     for object_id, xml in payload.get("upserts", {}).items():
         replacement = ET.fromstring(xml)
         record = records.get(str(object_id))
-        if record is None:
-            container.append(replacement)
-        else:
-            parent, old = record
-            index = list(parent).index(old)
+        if record is not None:
+            old_parent, old = record
             replacement.tail = old.tail
-            parent.remove(old)
-            parent.insert(index, replacement)
+            old_parent.remove(old)
+        # Always insert slot records into GameObject/objects. This also repairs
+        # IDs previously materialized under Prop/objects.
+        container.append(replacement)
     replacements = [ET.fromstring(xml) for xml in payload.get("object_groups", [])]
     existing = [node for node in tree.getroot().iter() if local_tag(node) == "ObjectGroups"]
     if len(existing) != len(replacements):

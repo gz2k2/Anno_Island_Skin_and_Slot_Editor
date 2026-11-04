@@ -16,6 +16,7 @@ import copy
 import math
 import random
 import tkinter as tk
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import customtkinter as ctk
 from tkinter import messagebox
@@ -121,7 +122,7 @@ class ObjectMapSession(DensitySession):
         self.cache.original_values=list(self.cache.original_values)+values[len(self.cache.original_values):]
 
 
-def preview_placement(session, paths, count, center, bounds, progress, rng=None, area=None, polygon=None):
+def preview_placement(session, paths, count, center, bounds, progress, rng=None, area=None, polygon=None, terrain_height=None):
     """Create a new preview. No cache mutation and no disk writes."""
     if not paths or not isinstance(count,int) or not 1<=count<=10000:
         raise ValueError('Choose an object and a count from 1 to 10000.')
@@ -131,7 +132,6 @@ def preview_placement(session, paths, count, center, bounds, progress, rng=None,
     names,instances=child(grid,'FileNames'),child(grid,'Instances')
     if names is None or instances is None:raise ValueError('Missing FileNames or Instances.')
     candidates=[(n,position(n)) for n in instances if position(n) is not None]
-    if not candidates:raise ValueError('No nearby object positions are available.')
     x,z=center;lo,hi,bottom,top=bounds
     if not lo<=x<=hi or not bottom<=z<=top:raise ValueError('Click inside PlayableArea.')
     if area is not None:
@@ -145,16 +145,9 @@ def preview_placement(session, paths, count, center, bounds, progress, rng=None,
         # Select tiles spread over the full area even when rows*columns > count.
         tiles=[tiles[min(len(tiles)-1,int((i+.5)*len(tiles)/count))] for i in range(count)]
         rng.shuffle(tiles)
-    neighbors=sorted(candidates,key=lambda pair:(pair[1][0]-x)**2+(pair[1][2]-z)**2)[:12]
-    # Median local nearest-neighbor distance is robust against distant pairs.
-    distances=[]
-    for _,p in neighbors:
-        nearby=[math.hypot(p[0]-q[0],p[2]-q[2]) for _,q in neighbors
-                if (p[0],p[2])!=(q[0],q[2])]
-        if nearby:distances.append(min(nearby))
-    typical=sorted(distances)[len(distances)//2] if distances else min(hi-lo,top-bottom)/100
-    # World-space center spacing, not an asset bounding-box collision test.
-    minimum=max(typical*0.65, min(hi-lo,top-bottom)/1000, 0.05)
+    # Placement spacing must not depend on nearby RD3D objects. Height is sampled
+    # exclusively from Gamedata HeightMap and placement uses deterministic world spacing.
+    minimum=max(min(hi-lo,top-bottom)/1000,0.05)
     radius=min(max(minimum*math.sqrt(count)*1.5,minimum*2),min(hi-lo,top-bottom)/10)
     buckets={}
     def bucket(px,pz):return math.floor(px/minimum),math.floor(pz/minimum)
@@ -194,9 +187,14 @@ def preview_placement(session, paths, count, center, bounds, progress, rng=None,
             nx,nz=round(nx,7),round(nz,7)
             if not lo<=nx<=hi or not bottom<=nz<=top or not spaced(nx,nz):continue
             if area is not None and not (ax<=nx<=bx and az<=nz<=bz):continue
-            local=sorted(candidates if area is not None else neighbors,key=lambda pair:(pair[1][0]-nx)**2+(pair[1][2]-nz)**2)[:4]
-            weights=[1/max((p[0]-nx)**2+(p[2]-nz)**2,1e-12) for _,p in local]
-            y=sum(p[1]*weight for (_,p),weight in zip(local,weights))/sum(weights)
+            local=sorted(candidates,key=lambda pair:(pair[1][0]-nx)**2+(pair[1][2]-nz)**2)[:1]
+            if not local:
+                raise ValueError('RD3D contains no instance template that can be cloned for Add Object.')
+            if terrain_height is None:
+                raise ValueError('Gamedata HeightMap is required to place objects.')
+            y=terrain_height(nx,nz)
+            if y is None:
+                raise ValueError(f'No HeightMap height is available at X={nx:.3f}, Z={nz:.3f}.')
             new=round(nx,7),round(y,7),round(nz,7)
             if new not in occupied:break
         else:raise ValueError(
@@ -423,6 +421,68 @@ class PlaceObjectMixin:
             messagebox.showerror('Place Object',str(exc));return
         groups=tuple(tuple(group) for group in path_groups if group)
         area=getattr(self,'_place_area',None);polygon=getattr(self,'_place_polygon',None)
+
+        # Load Gamedata automatically for Object Map placement. Prefer an active
+        # RAM gamedata tree, otherwise use the selected gamedata file and its
+        # gamedata_patched.xml sibling when available.
+        game_tree=getattr(self,'_island_slot_ram_game_tree',None)
+        if game_tree is None:
+            game_value=getattr(getattr(self,'gamedata_file_var',None),'get',lambda:'' )().strip()
+            game_path=Path(game_value) if game_value else None
+            if not game_path or not game_path.is_file():
+                # RD3D and Gamedata normally live in the same unpacked map tree;
+                # resolve Gamedata automatically from the loaded RD3D location.
+                rd_value=getattr(getattr(self,'rd3d_file_var',None),'get',lambda:'' )().strip()
+                rd_path=Path(rd_value) if rd_value else None
+                search_root=rd_path.parent if rd_path and rd_path.is_file() else None
+                candidates=[]
+                if search_root:
+                    for parent in (search_root, *search_root.parents):
+                        for name in ('gamedata_patched.xml','gamedata_original.xml','gamedata.xml'):
+                            candidate=parent/name
+                            if candidate.is_file(): candidates.append(candidate)
+                        if candidates: break
+                game_path=candidates[0] if candidates else None
+                if game_path is not None and hasattr(self,'gamedata_file_var'):
+                    self.gamedata_file_var.set(str(game_path))
+            if game_path and game_path.is_file():
+                patched=game_path.with_name('gamedata_patched.xml')
+                effective=patched if patched.is_file() else game_path
+                parser=getattr(self,'_parse_xml_tolerant',None)
+                try:
+                    game_tree=parser(effective)[0] if parser else ET.parse(effective)
+                except Exception as exc:
+                    messagebox.showerror('Place Object',f'Gamedata could not be loaded: {exc}')
+                    return
+        if game_tree is None:
+            messagebox.showerror('Place Object','No Gamedata XML with HeightMap could be found automatically.')
+            return
+
+        heightmap=None
+        for node in game_tree.getroot().iter():
+            if local_tag(node)!='HeightMap': continue
+            width_node=child(node,'Width'); height_node=child(node,'Height'); values_node=child(node,'HeightMap')
+            if width_node is None or height_node is None or values_node is None: continue
+            try:
+                hm_width=int((width_node.text or '').strip()); hm_height=int((height_node.text or '').strip())
+                raw=[int(value) for value in (values_node.text or '').split()]
+            except (TypeError,ValueError): continue
+            if hm_width>1 and hm_height>1 and len(raw)==hm_width*hm_height:
+                heightmap=(hm_width,hm_height,tuple(value if value<32768 else value-65536 for value in raw)); break
+        if heightmap is None:
+            messagebox.showerror('Place Object','The automatically loaded Gamedata has no usable HeightMap.')
+            return
+        hm_width,hm_height,hm_values=heightmap
+        def terrain_height(world_x,world_z):
+            gx=float(world_x)*2.0; gz=float(world_z)*2.0
+            if not (0<=gx<=hm_width-1 and 0<=gz<=hm_height-1): return None
+            x0=int(math.floor(gx)); z0=int(math.floor(gz)); x1=min(x0+1,hm_width-1); z1=min(z0+1,hm_height-1)
+            fx=gx-x0; fz=gz-z0
+            h00=hm_values[z0*hm_width+x0]/128.0; h10=hm_values[z0*hm_width+x1]/128.0
+            h01=hm_values[z1*hm_width+x0]/128.0; h11=hm_values[z1*hm_width+x1]/128.0
+            top=h00+(h10-h00)*fx; bottom_h=h01+(h11-h01)*fx
+            return top+(bottom_h-top)*fz
+
         def work(progress):
             current=session if session is not None else ObjectMapSession(cache)
             rng=random.Random()
@@ -430,7 +490,7 @@ class PlaceObjectMixin:
             # or ceil(n/k) objects. Each category then chooses a random path.
             chosen=[rng.choice(groups[index % len(groups)]) for index in range(count)]
             rng.shuffle(chosen)
-            current=preview_placement(current,chosen,count,center,bounds,progress,rng=rng,area=area,polygon=polygon)
+            current=preview_placement(current,chosen,count,center,bounds,progress,rng=rng,area=area,polygon=polygon,terrain_height=terrain_height)
             return current,'place',self._map_preview_points(current)
         self._tmc_ram_begin('RD3D Map Edit',work)
 

@@ -19,7 +19,16 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 from PIL import Image, ImageOps, ImageTk
-from app.config.config_rd3d import RD3D_REGION_BY_SOURCE_CATEGORY
+ORIGINAL_MAP_REGION_BY_PATH_TOKEN = {
+    "moderate": "Old World",
+    "colony01": "New World",
+    "colony02": "Enbesa",
+    "colony03": "Arctic",
+    "ggj": "New World",
+    "scenario02": "Enbesa",
+    "scenario03": "New World",
+    "scenario04": "New World",
+}
 
 
 class StartTabMixin:
@@ -121,7 +130,7 @@ class StartTabMixin:
         path_text = str(Path(a7m_path)).replace("\\", "/").casefold()
         matches = [
             (source_name, region_name)
-            for source_name, region_name in RD3D_REGION_BY_SOURCE_CATEGORY.items()
+            for source_name, region_name in ORIGINAL_MAP_REGION_BY_PATH_TOKEN.items()
             if source_name.casefold() in path_text
         ]
         if not matches:
@@ -265,7 +274,7 @@ class StartTabMixin:
 
         filters = ctk.CTkFrame(window, fg_color="transparent")
         filters.grid(row=2, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="w")
-        region_names = list(dict.fromkeys(RD3D_REGION_BY_SOURCE_CATEGORY.values()))
+        region_names = list(dict.fromkeys(ORIGINAL_MAP_REGION_BY_PATH_TOKEN.values()))
         filter_buttons = {}
 
         table_frame = ctk.CTkFrame(window)

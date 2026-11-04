@@ -23,6 +23,7 @@ from app.config.config_slot import (
     RIVER_GUID_ROLE,
     MINE_SLOT_GUIDS,
     MINE_WORKAREA_GUID,
+    MINE_CAVE_GUID,
     SINGLE_SLOT_GUIDS,
 )
 from app.functions.function_island_slots import (
@@ -32,6 +33,9 @@ from app.functions.function_island_slots import (
     remove_map_ids,
 )
 from app.functions.function_place_object import world_from_click
+
+# Slot Map height overlay alpha (0 = transparent, 255 = fully opaque).
+SLOT_MAP_HEIGHTMAP_OPACITY = 205
 
 
 class SlotConfigurationTabMixin(IslandSlotEditingMixin):
@@ -63,8 +67,14 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_points = []
         self.slot_map_screen_points = []
         self.slot_map_river_pairs = []
+        self.slot_map_mine_pairs = []
         self.slot_map_river_curves = []
+        self.slot_map_mine_curves = []
         self.slot_map_show_river_area_var = tk.BooleanVar(value=False)
+        self.slot_map_show_mine_paths_var = tk.BooleanVar(value=False)
+        # Optional world-coordinate grid. One grid square is exactly 1.0 x 1.0
+        # world units so half-cell slot positions can be read directly.
+        self.slot_map_show_grid_var = tk.BooleanVar(value=False)
         self.slot_map_show_height_map_var = tk.BooleanVar(value=False)
         self.slot_map_height_overlay_source = None
         self.slot_map_height_overlay_tk = None
@@ -480,8 +490,14 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         # and outgoing tangent vectors i/o. These data describe the visible
         # river course; Slot/Work-Area positions are not used for this overlay.
         river_curves = []
+        mine_curves = []
         for record in game_records:
-            if record["guid"] not in RIVER_GUID_ROLE and record["guid"] != "1001608":
+            is_river_curve = (
+                record["guid"] in RIVER_GUID_ROLE
+                or record["guid"] == "1001608"
+            )
+            is_mine_curve = record["guid"] in {"100419", "1000253"}
+            if not is_river_curve and not is_mine_curve:
                 continue
             for path_node in record["node"].iter():
                 if path_node.tag.rsplit("}", 1)[-1] != "Path":
@@ -521,8 +537,13 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                             max(0.0, values.get("w", 0.0)),
                         ))
                 if len(points) >= 2:
-                    river_curves.append((points, tangent_scale))
-        self.slot_map_river_curves = river_curves
+                    target_curves = river_curves if is_river_curve else mine_curves
+                    target_curves.append((points, tangent_scale, record["guid"]))
+        # Keep the old two-field River representation for compatibility.
+        self.slot_map_river_curves = [
+            (points, scale) for points, scale, _guid in river_curves
+        ]
+        self.slot_map_mine_curves = mine_curves
 
         for family_name, family in RIVER_GUID_FAMILIES.items():
             primaries = [r for r in game_records if r["guid"] == family["primary"]]
@@ -560,28 +581,62 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                     if pair[0] in map_entries and pair[1] in map_entries:
                         river_pairs.append(pair)
                         paired_ids.update(pair[:2])
-        # Mine and Work Area use the same non-empty ObjectFolderID. Treat the
-        # pair exactly like a connected River pair for map rendering, so the
-        # helper arrow is derived from actual positions, never angle offsets.
-        mine_primaries = [record for record in game_records if record["guid"] in MINE_SLOT_GUIDS]
-        mine_workareas = [record for record in game_records if record["guid"] == MINE_WORKAREA_GUID]
-        for primary in mine_primaries:
-            matches = [
-                work for work in mine_workareas
-                if primary["folder"] and work["folder"] == primary["folder"]
-            ]
-            if len(matches) == 1:
-                pair = (primary["id"], matches[0]["id"], "mine")
-                if pair[0] in map_entries and pair[1] in map_entries:
-                    river_pairs.append(pair)
-                    paired_ids.update(pair[:2])
+        # Mine packages are paired exclusively through Gamedata ObjectGroups.
+        # ObjectFolderID is runtime metadata (generated objects correctly use 0)
+        # and must never be used as a logical mine-pair identifier.
+        mine_pairs = []
+        seen_mine_pairs = set()
+        for object_groups in game_root.iter():
+            if object_groups.tag.rsplit("}", 1)[-1] != "ObjectGroups":
+                continue
+            for group_node in list(object_groups):
+                game_objects = next((
+                    child for child in list(group_node)
+                    if isinstance(child.tag, str)
+                    and child.tag.rsplit("}", 1)[-1] == "GameObjects"
+                ), None)
+                if game_objects is None:
+                    continue
+                member_ids = [
+                    (member.text or "").strip()
+                    for member in list(game_objects)
+                    if (member.text or "").strip()
+                ]
+                members = [game_entries[object_id] for object_id in member_ids
+                           if object_id in game_entries]
+                primaries = [record for record in members
+                             if record["guid"] in MINE_SLOT_GUIDS]
+                workareas = [record for record in members
+                             if record["guid"] == MINE_WORKAREA_GUID]
+                caves = [record for record in members
+                         if record["guid"] == MINE_CAVE_GUID]
+                if len(primaries) != 1 or len(workareas) != 1:
+                    continue
+                primary_id = primaries[0]["id"]
+                workarea_id = workareas[0]["id"]
+                pair_key = (primary_id, workarea_id)
+                # Generated mine groups are mirrored in parallel Gamedata
+                # containers. Keep one visual pair per unique ID combination.
+                if pair_key in seen_mine_pairs:
+                    continue
+                if primary_id not in map_entries or workarea_id not in map_entries:
+                    continue
+                cave_id = caves[0]["id"] if len(caves) == 1 else None
+                mine_pairs.append((primary_id, workarea_id, cave_id))
+                seen_mine_pairs.add(pair_key)
+                river_pairs.append((primary_id, workarea_id, "mine"))
+                paired_ids.update(pair_key)
+        self.slot_map_mine_pairs = mine_pairs
         self.slot_map_river_pairs = river_pairs
 
         # Single-point River and legacy unpaired Mine slots use Direction.
         # Keep it by ObjectId so the Slot Map can render a facing arrow without
         # changing the existing point tuple.
         orientation_directions = {}
-        directional_guids = {guid for guid, (_family, role) in RIVER_GUID_ROLE.items() if role == "primary"} | {"1000029", "614", "116037"}
+        directional_guids = (
+            {guid for guid, (_family, role) in RIVER_GUID_ROLE.items() if role == "primary"}
+            | {"1000029", "614", "116037", MINE_WORKAREA_GUID}
+        )
         for record in game_records:
             if record["guid"] not in directional_guids:
                 continue
@@ -674,24 +729,32 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         header = built["header"]
         maximize = built["maximize_button"]
         if maximize is not None:
-            maximize.grid_configure(column=8, padx=(8, 0))
+            maximize.grid_configure(column=10, padx=(8, 0))
         ctk.CTkCheckBox(
             header, text="River area", variable=self.slot_map_show_river_area_var,
             command=self._slot_map_schedule_redraw, width=105,
         ).grid(row=0, column=2, padx=(12, 0), sticky="e")
         ctk.CTkCheckBox(
+            header, text="Mine paths", variable=self.slot_map_show_mine_paths_var,
+            command=self._slot_map_schedule_redraw, width=105,
+        ).grid(row=0, column=3, padx=(8, 0), sticky="e")
+        ctk.CTkCheckBox(
+            header, text="Grid 1.0", variable=self.slot_map_show_grid_var,
+            command=self._slot_map_schedule_redraw, width=95,
+        ).grid(row=0, column=4, padx=(8, 0), sticky="e")
+        ctk.CTkCheckBox(
             header, text="Height map", variable=self.slot_map_show_height_map_var,
             command=self._slot_map_height_toggle, width=110,
-        ).grid(row=0, column=3, padx=(8, 0), sticky="e")
+        ).grid(row=0, column=5, padx=(8, 0), sticky="e")
         self.slot_map_allow_dot_movement_var.set(False)
         MapViewTemplate.build_dot_movement_checkbox(
             header, self.slot_map_allow_dot_movement_var,
-            column=4, command=self._slot_map_dot_movement_changed,
+            column=6, command=self._slot_map_dot_movement_changed,
             canvas=self.slot_map_canvas,
         )
-        ctk.CTkButton(header, text="Save", width=90, command=self._island_slot_save).grid(row=0, column=5, padx=(8, 0), sticky="e")
-        ctk.CTkButton(header, text="Reload", width=90, command=self._slot_map_reload_rd3d).grid(row=0, column=6, padx=(8, 0), sticky="e")
-        ctk.CTkButton(header, text="Reset", width=90, fg_color="#B33939", hover_color="#8F2D2D", command=self._island_slot_reset).grid(row=0, column=7, padx=(8, 0), sticky="e")
+        ctk.CTkButton(header, text="Save", width=90, command=self._island_slot_save).grid(row=0, column=7, padx=(8, 0), sticky="e")
+        ctk.CTkButton(header, text="Reload", width=90, command=self._slot_map_reload_rd3d).grid(row=0, column=9, padx=(8, 0), sticky="e")
+        ctk.CTkButton(header, text="Reset", width=90, fg_color="#B33939", hover_color="#8F2D2D", command=self._island_slot_reset).grid(row=0, column=8, padx=(8, 0), sticky="e")
         self._island_slot_capture_snapshot()
         self._slot_map_bind_canvas(); self._slot_map_rebuild_legend(); self._slot_map_schedule_redraw()
         self.slot_map_selection_var.set(
@@ -819,6 +882,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_points = []
         self.slot_map_screen_points = []
         self.slot_map_river_pairs = []
+        self.slot_map_mine_pairs = []
         self.slot_map_orientation_directions = {}
         self.slot_map_hover_point = None
         self.status_var.set("Slot Map closed; RAM working copy cleared.")
@@ -884,6 +948,10 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
     def _slot_map_ctrl_pressed(event): return bool(getattr(event, "state", 0) & 0x0004)
 
     def _slot_map_wheel(self, event):
+        # Hide expensive overlays immediately while the wheel zoom is active.
+        # The scheduled full redraw recreates them at the final zoom level.
+        for tag in ("height_map_overlay", "river_course", "mine_bezier_path", "virtual_slot_orientation_line", "river_orientation_line", "workarea_orientation_line", "river_pair_line", "slot_selection_area", "slot_grid"):
+            self.slot_map_canvas.itemconfigure(tag, state="hidden")
         (
             self.slot_map_shared_zoom,
             self.slot_map_shared_pan_x,
@@ -903,6 +971,10 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_pan_start = MapViewTemplate.begin_pan(
             event, self.slot_map_shared_pan_x, self.slot_map_shared_pan_y)
         self.slot_map_canvas.configure(cursor="fleur")
+        # Keep panning lightweight: the background is moved directly while dots and
+        # expensive overlays are hidden. A full redraw restores everything on release.
+        for tag in ("height_map_overlay", "river_course", "mine_bezier_path", "virtual_slot_orientation_line", "river_orientation_line", "workarea_orientation_line", "river_pair_line", "slot_selection_area", "slot_grid"):
+            self.slot_map_canvas.itemconfigure(tag, state="hidden")
         return "break"
 
     def _slot_map_pan_move(self, event):
@@ -918,6 +990,8 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_pan_start = None
         if self.slot_map_canvas is not None:
             self.slot_map_canvas.configure(cursor="crosshair")
+            # Rebuild overlays at their final map position after panning.
+            self._slot_map_schedule_redraw()
         return "break"
 
     def _slot_map_height_toggle(self):
@@ -950,8 +1024,8 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             if value <= right[0]:
                 amount = (value - left[0]) / (right[0] - left[0])
                 rgb = tuple(round(a + (b - a) * amount) for a, b in zip(left[1], right[1]))
-                return (*rgb, 138)
-        return (*stops[-1][1], 138)
+                return (*rgb, SLOT_MAP_HEIGHTMAP_OPACITY)
+        return (*stops[-1][1], SLOT_MAP_HEIGHTMAP_OPACITY)
 
     def _slot_map_prepare_height_overlay(self):
         heightmap = getattr(self, "slot_map_gamedata_heightmap", None)
@@ -1003,6 +1077,42 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             f"range {actual_low:.2f} to {actual_high:.2f} | "
             f"color scale P2-P98: {low:.2f} to {high:.2f}"
         )
+
+    def _slot_map_draw_grid(
+            self, canvas, image_x, image_y, image_w, image_h,
+            min_x, max_x, min_z, max_z):
+        """Draw an optional 1.0 x 1.0 world-unit grid over the Slot Map."""
+        if not self.slot_map_show_grid_var.get():
+            return
+        span_x = max(max_x - min_x, 0.001)
+        span_z = max(max_z - min_z, 0.001)
+        step = 1.0
+        epsilon = 1e-9
+        first_x = math.ceil((min_x - epsilon) / step) * step
+        first_z = math.ceil((min_z - epsilon) / step) * step
+
+        # Keep the raster visible but unobtrusive. Integer world coordinates are
+        # slightly stronger while every half-unit remains represented.
+        x = first_x
+        while x <= max_x + epsilon:
+            screen_x = image_x + ((x - min_x) / span_x) * image_w
+            major = abs(x - round(x)) < 1e-7
+            canvas.create_line(
+                screen_x, image_y, screen_x, image_y + image_h,
+                fill="#555555" if major else "#3a3a3a",
+                width=1, tags=("map_content", "slot_grid"),
+            )
+            x += step
+        z = first_z
+        while z <= max_z + epsilon:
+            screen_y = image_y + ((max_z - z) / span_z) * image_h
+            major = abs(z - round(z)) < 1e-7
+            canvas.create_line(
+                image_x, screen_y, image_x + image_w, screen_y,
+                fill="#555555" if major else "#3a3a3a",
+                width=1, tags=("map_content", "slot_grid"),
+            )
+            z += step
 
     def _slot_map_draw_river_area(
             self, canvas, image_x, image_y, image_w, image_h,
@@ -1058,6 +1168,56 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                     tags=("map_content", "river_course"),
                 )
 
+    def _slot_map_draw_mine_paths(
+            self, canvas, image_x, image_y, image_w, image_h,
+            min_x, max_x, min_z, max_z):
+        """Draw actual 100419/1000253 Bezier paths in the Slot Map."""
+        if not self.slot_map_show_mine_paths_var.get():
+            return
+        span_x = max(max_x - min_x, 0.001)
+        span_z = max(max_z - min_z, 0.001)
+        def screen(world):
+            x, _y, z = world
+            return (
+                image_x + ((x - min_x) / span_x) * image_w,
+                image_y + ((max_z - z) / span_z) * image_h,
+            )
+        for curve, tangent_scale, guid in getattr(
+                self, "slot_map_mine_curves", []):
+            line_color = "#FF9F43" if guid == "100419" else "#FFD166"
+            for index in range(len(curve) - 1):
+                p0, _incoming0, outgoing0, _width0 = curve[index]
+                p3, incoming1, _outgoing1, _width1 = curve[index + 1]
+                p1 = tuple(p0[axis] + outgoing0[axis] * tangent_scale
+                           for axis in range(3))
+                p2 = tuple(p3[axis] + incoming1[axis] * tangent_scale
+                           for axis in range(3))
+                sampled = []
+                segment_world = max(0.1, math.hypot(
+                    p3[0] - p0[0], p3[2] - p0[2]))
+                steps = max(8, min(32, int(math.ceil(segment_world * 4.0))))
+                for step in range(steps + 1):
+                    t = step / steps
+                    u = 1.0 - t
+                    world = tuple(
+                        (u ** 3) * p0[axis]
+                        + 3.0 * (u ** 2) * t * p1[axis]
+                        + 3.0 * u * (t ** 2) * p2[axis]
+                        + (t ** 3) * p3[axis]
+                        for axis in range(3)
+                    )
+                    sampled.extend(screen(world))
+                canvas.create_line(
+                    *sampled, fill="#111111", width=5, smooth=True,
+                    capstyle=tk.ROUND, joinstyle=tk.ROUND,
+                    tags=("map_content", "mine_bezier_path"),
+                )
+                canvas.create_line(
+                    *sampled, fill=line_color, width=2, smooth=True,
+                    capstyle=tk.ROUND, joinstyle=tk.ROUND,
+                    tags=("map_content", "mine_bezier_path"),
+                )
+
     def _slot_map_schedule_redraw(self, _event=None):
         if self.slot_map_canvas is None or not self.slot_map_canvas.winfo_exists(): return
         if self.slot_map_after_id is not None:
@@ -1108,6 +1268,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                         anchor="nw", tags=("map_content", "height_map_overlay"),
                     )
 
+        self._slot_map_draw_grid(
+            canvas, image_x, image_y, image_w, image_h,
+            min_x, max_x, min_z, max_z,
+        )
+
         if no_positions:
             canvas.create_text(
                 width / 2, height / 2, text="No Position found.",
@@ -1139,9 +1304,14 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             canvas, image_x, image_y, image_w, image_h,
             min_x, max_x, min_z, max_z,
         )
+        self._slot_map_draw_mine_paths(
+            canvas, image_x, image_y, image_w, image_h,
+            min_x, max_x, min_z, max_z,
+        )
 
         river_orientation_vectors = []
-        for primary_id, workarea_id, _family_name in getattr(self, "slot_map_river_pairs", []):
+        workarea_orientation_points = []
+        for primary_id, workarea_id, family_name in getattr(self, "slot_map_river_pairs", []):
             primary = screen_by_id.get(primary_id)
             workarea = screen_by_id.get(workarea_id)
             if primary is None or workarea is None:
@@ -1156,6 +1326,8 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             length = math.hypot(dx, dy)
             if length > 0.001:
                 river_orientation_vectors.append((primary, dx / length, dy / length, line_color))
+            if family_name == "mine":
+                workarea_orientation_points.append(workarea)
 
         # Show the facing direction at single-point River and Mine slots.
         # Direction is in radians; +X is right and +Z is up on the Slot Map.
@@ -1190,6 +1362,26 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                 px, py, virtual_workarea_x, virtual_workarea_y,
                 fill=line_color, width=3, arrow=tk.LAST, arrowshape=(8, 10, 4),
                 tags=("map_content", "virtual_slot_orientation_line"),
+            )
+
+        # 1000253 Work Area orientation diagnostic. Unlike the pair-axis arrow,
+        # this arrow visualizes the Direction actually stored in Gamedata/XML so
+        # an in-game orientation deviation is immediately visible in the Slot Map.
+        for workarea in workarea_orientation_points:
+            px, py, oid, guid = workarea[:4]
+            direction = getattr(self, "slot_map_orientation_directions", {}).get(oid)
+            if direction is None:
+                continue
+            dir_x = math.cos(direction)
+            dir_y = -math.sin(direction)
+            line_color = self.slot_map_guid_colors.get(guid, "#F6C85F")
+            canvas.create_line(
+                px, py,
+                px + dir_x * orientation_line_length,
+                py + dir_y * orientation_line_length,
+                fill=line_color, width=3, arrow=tk.LAST,
+                arrowshape=(8, 10, 4),
+                tags=("map_content", "workarea_orientation_line"),
             )
 
         # River Slot arrows use the actual primary -> work-area pair direction.

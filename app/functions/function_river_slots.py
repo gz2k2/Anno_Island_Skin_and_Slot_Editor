@@ -178,34 +178,25 @@ class RiverSlotEditingMixin:
         return entrance_x + side, target_z
 
     def _island_slot_add_riverslot_at_event(self, event):
-        """Start native 117741/117742 two-click placement."""
+        """Enter free two-click RiverSlot placement; the menu click is not a placement click."""
         guids = self._personal_river_guids()
         if guids is None:
             return
         primary_guid, workarea_guid = guids
         self._island_slot_cancel_mine_placement(silent=True)
-        x, z = self._island_slot_world(event)
-        x = self._river_half_coordinate(x)
-        z = self._river_half_coordinate(z)
         samples, source = self._island_slot_height_samples()
-        y = self._river_terrain_height(x, z, samples)
-        if y is None or y <= 0:
-            messagebox.showerror(
-                "Add RiverSlot", "RiverSlot must be placed on emerged terrain.",
-                parent=self.slot_map_window)
-            return
         self._mine_placement = {
             "kind": "river", "name": "Riverslot",
-            "entrance": (x, y, z), "samples": samples, "source": source,
+            "entrance": None, "samples": samples, "source": source,
             "primary_guid": primary_guid, "workarea_guid": workarea_guid,
         }
         self.slot_map_allow_dot_movement_var.set(False)
         self._slot_map_dot_movement_changed()
         self.slot_map_canvas.focus_set()
         self.status_var.set(
-            f"RiverSlot {primary_guid} selected at X/Z {x:g} / {z:g}. "
-            f"Left-click to place Work Area {workarea_guid}; right-click or Esc to cancel.")
-        self._island_slot_draw_mine_preview(None)
+            f"Move the mouse and left-click to place RiverSlot {primary_guid}; "
+            "right-click or Esc to cancel.")
+        self._island_slot_draw_mine_preview(event)
 
     def _island_slot_commit_native_river_pair(
             self, placement, entrance, work_position, samples, source, status):

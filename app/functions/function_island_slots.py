@@ -132,8 +132,19 @@ def game_object_container(root):
     raise ValueError("Gamedata XML has no <GameObject>/<objects> container.")
 
 
-def prepare_native_deposit(clone, object_id, position):
-    """Apply the same normalization as C# DepositSlotService.Add()."""
+def oil_based_slot_template(target_guid):
+    """Clone the proven Oil slot template and change only its GUID."""
+    clone = template_element("oil slot")
+    set_text(clone, "guid", str(target_guid))
+    return clone
+
+
+def prepare_reference_deposit(clone, slot_type, object_id, position):
+    """Apply Island Editor's DepositSlotService.Add() mutation set to Clay/Oil only."""
+    if slot_type not in {"clay slot", "oil slot"}:
+        return False
+    # The embedded templates are byte-for-structure copies of Island Editor's
+    # Clay.xml and Oil.xml. Only these four runtime values are changed.
     set_text(clone, "ID", object_id)
     set_text(clone, "ObjectFolderID", "0")
     set_text(clone, "Position", format_position(position))
@@ -141,9 +152,11 @@ def prepare_native_deposit(clone, object_id, position):
     sequence = direct(mesh, "SequenceData") if mesh is not None else None
     start = direct(sequence, "CurrentSequenceStartTime") if sequence is not None else None
     if start is None:
-        raise ValueError("Native deposit template lacks CurrentSequenceStartTime.")
+        raise ValueError(
+            f"Reference {slot_type} template lacks Mesh/SequenceData/CurrentSequenceStartTime."
+        )
     start.text = "0"
-    return clone
+    return True
 
 def object_container(root):
     candidates = []
@@ -902,13 +915,70 @@ class IslandSlotBaseMixin:
             self.status_var.set("Two-point placement cancelled. No XML data was changed.")
         return "break" if _event is not None else None
 
+    def _island_slot_snap_mine_target(self, entrance, target_x, target_z):
+        """Snap Mine -> 1000253 to the configured angular raster."""
+        dx, dz = target_x - entrance[0], target_z - entrance[2]
+        distance = math.hypot(dx, dz)
+        if distance <= 0.000001:
+            return entrance[0], entrance[2]
+        snap_degrees = float(self.MINE_ORIENTATION_SNAP_DEGREES)
+        if snap_degrees <= 0.0:
+            return target_x, target_z
+        step = math.radians(snap_degrees)
+        angle = round(math.atan2(dz, dx) / step) * step
+        return (
+            entrance[0] + math.cos(angle) * distance,
+            entrance[2] + math.sin(angle) * distance,
+        )
+
     def _island_slot_draw_mine_preview(self, event):
         placement = getattr(self, "_mine_placement", None)
         canvas = getattr(self, "slot_map_canvas", None)
         if placement is None or canvas is None:
             return False
         canvas.delete("mine_placement_preview")
-        ex, _ey, ez = placement["entrance"]
+        entrance = placement.get("entrance")
+        if entrance is None:
+            if event is None:
+                return True
+            try:
+                wx, wz = self._island_slot_world(event)
+            except ValueError:
+                return True
+            if placement.get("kind") == "river":
+                wx, wz = self._river_half_coordinate(wx), self._river_half_coordinate(wz)
+            # MineSlot first-point preview follows the exact mouse world position.
+            width, height = max(canvas.winfo_width(), 200), max(canvas.winfo_height(), 200)
+            min_x, max_x, min_z, max_z = self.slot_map_bounds
+            span_x, span_z = max_x - min_x, max_z - min_z
+            margin = MapViewTemplate.MAP_MARGIN
+            scale = min((width - 2 * margin) / span_x, (height - 2 * margin) / span_z)
+            image_w = span_x * scale * self.slot_map_shared_zoom
+            image_h = span_z * scale * self.slot_map_shared_zoom
+            image_x = (width - image_w) / 2 + self.slot_map_shared_pan_x
+            image_y = (height - image_h) / 2 + self.slot_map_shared_pan_y
+            px = image_x + ((wx - min_x) / span_x) * image_w
+            py = image_y + ((max_z - wz) / span_z) * image_h
+            wy = self._river_terrain_height(wx, wz, placement["samples"])
+            color = "#39D98A" if wy is not None and wy > 0 else "#FF5C5C"
+            if placement.get("kind") == "mine":
+                # Show the 2-world-unit clearance circle already while the
+                # first MineSlot dot follows the mouse cursor.
+                circle_radius = max(0.0, float(self.MINE_PLACEMENT_CIRCLE_RADIUS))
+                radius_x = abs((image_w / span_x) * circle_radius)
+                radius_y = abs((image_h / span_z) * circle_radius)
+                canvas.create_oval(
+                    px - radius_x, py - radius_y,
+                    px + radius_x, py + radius_y,
+                    outline="#F6C85F", width=2, dash=(4, 3),
+                    tags=("mine_placement_preview",),
+                )
+            canvas.create_oval(px-6, py-6, px+6, py+6, fill=color,
+                               outline="#111111", width=1,
+                               tags=("mine_placement_preview",))
+            canvas.tag_raise("mine_placement_preview")
+            return True
+        ex, _ey, ez = entrance
         if event is None:
             wx, wz = ex, ez
         else:
@@ -922,6 +992,9 @@ class IslandSlotBaseMixin:
             if placement.get("kind") == "river":
                 wx, wz = math.floor(wx) + 0.5, math.floor(wz) + 0.5
                 wx, wz = self._island_slot_snap_river_target(
+                    placement["entrance"], wx, wz)
+            elif placement.get("kind") == "mine":
+                wx, wz = self._island_slot_snap_mine_target(
                     placement["entrance"], wx, wz)
         width, height = max(canvas.winfo_width(), 200), max(canvas.winfo_height(), 200)
         min_x, max_x, min_z, max_z = self.slot_map_bounds
@@ -939,6 +1012,16 @@ class IslandSlotBaseMixin:
             )
         sx, sy = screen(ex, ez)
         tx, ty = screen(wx, wz)
+        if placement.get("kind") == "mine":
+            # Two world units in every direction around the MineSlot anchor.
+            circle_radius = max(0.0, float(self.MINE_PLACEMENT_CIRCLE_RADIUS))
+            radius_x = abs(screen(ex + circle_radius, ez)[0] - sx)
+            radius_y = abs(screen(ex, ez + circle_radius)[1] - sy)
+            canvas.create_oval(
+                sx - radius_x, sy - radius_y, sx + radius_x, sy + radius_y,
+                outline="#F6C85F", width=2, dash=(4, 3),
+                tags=("mine_placement_preview",),
+            )
         if placement.get("kind") == "river":
             geometry = self._river_geometry(
                 placement["entrance"], (wx, placement["entrance"][1], wz))
@@ -974,15 +1057,41 @@ class IslandSlotBaseMixin:
         if placement is None:
             return False
         wx, wz = self._island_slot_world(event)
-        entrance = placement["entrance"]
         is_river = placement.get("kind") == "river"
+        entrance = placement.get("entrance")
+        if entrance is None:
+            if is_river:
+                wx, wz = self._river_half_coordinate(wx), self._river_half_coordinate(wz)
+            # MineSlot first point is placed at the exact mouse world position.
+            wy = self._river_terrain_height(wx, wz, placement["samples"])
+            title = "Add RiverSlot" if is_river else "Add Mine Slot"
+            if wy is None or wy <= 0:
+                messagebox.showerror(
+                    title,
+                    "RiverSlot must be placed on emerged terrain." if is_river
+                    else "Mine entrance must be placed on emerged terrain.",
+                    parent=self.slot_map_window)
+                return True
+            placement["entrance"] = (wx, wy, wz)
+            if is_river:
+                self.status_var.set(
+                    f"RiverSlot {placement['primary_guid']} selected at X/Z {wx:g} / {wz:g}. "
+                    f"Move the mouse and left-click to place Work Area {placement['workarea_guid']}; "
+                    "right-click or Esc to cancel.")
+            else:
+                self.status_var.set(
+                    f"Mine entrance selected at X/Z {wx:g} / {wz:g}. "
+                    "Move the mouse and left-click to place the Work Area; "
+                    "right-click or Esc to cancel.")
+            self._island_slot_draw_mine_preview(event)
+            return True
         if is_river:
             wx, wz = self._island_slot_snap_river_target(entrance, wx, wz)
             geometry = self._river_geometry(
                 entrance, (wx, entrance[1], wz))
             distance = geometry["length"]
         else:
-            wx, wz = math.floor(wx) + 0.5, math.floor(wz) + 0.5
+            wx, wz = self._island_slot_snap_mine_target(entrance, wx, wz)
             distance = math.hypot(wx - entrance[0], wz - entrance[2])
         minimum = self.RIVER_MIN_DISTANCE if is_river else self.MINE_MIN_DISTANCE
         maximum = self.RIVER_MAX_DISTANCE if is_river else self.MINE_MAX_DISTANCE
@@ -1234,6 +1343,9 @@ class IslandSlotBaseMixin:
         if slot_type in NATIVE_DEPOSIT_SLOT_NAMES:
             templates = [(game_object_container(game_root), template_element(slot_type))]
             template_source = "C# native deposit template"
+        elif slot_type == "gas slot (arctic)":
+            templates = [(game_object_container(game_root), oil_based_slot_template(spec["guid"]))]
+            template_source = "oil slot template with gas GUID"
         elif same:
             primary = same[0]
             if "pair_guid" in spec:
@@ -1279,10 +1391,37 @@ class IslandSlotBaseMixin:
                         id_map[source_id] = oid
             used.add(oid)
             replace_exact_text(clone, id_map)
-            if slot_type in NATIVE_DEPOSIT_SLOT_NAMES:
+            if slot_type in {"clay slot", "oil slot"}:
+                # Match Island Editor DepositSlotService.Add(): resolve final terrain Y,
+                # then mutate only ID, ObjectFolderID, Position and sequence start.
                 final_y = height_at(target[0], target[2])
-                final_position = (target[0], final_y if final_y is not None else target[1], target[2])
-                prepare_native_deposit(clone, oid, final_position)
+                final_position = (
+                    target[0], final_y if final_y is not None else target[1], target[2]
+                )
+                prepare_reference_deposit(clone, slot_type, oid, final_position)
+            elif slot_type == "gas slot (arctic)":
+                # Gas and Custom Slot both use Oil.xml semantics. For Custom Slot
+                # custom_guid is applied below after the Oil template is normalized.
+                final_y = height_at(target[0], target[2])
+                final_position = (
+                    target[0], final_y if final_y is not None else target[1], target[2]
+                )
+                set_text(clone, "ID", oid)
+                set_text(clone, "ObjectFolderID", "0")
+                set_text(clone, "Position", format_position(final_position))
+                mesh = direct(clone, "Mesh")
+                sequence = direct(mesh, "SequenceData") if mesh is not None else None
+                start = direct(sequence, "CurrentSequenceStartTime") if sequence is not None else None
+                if start is None:
+                    raise ValueError("Oil-based Gas/Custom template lacks CurrentSequenceStartTime.")
+                start.text = "0"
+            elif slot_type in NATIVE_DEPOSIT_SLOT_NAMES:
+                final_y = height_at(target[0], target[2])
+                final_position = (
+                    target[0], final_y if final_y is not None else target[1], target[2]
+                )
+                set_text(clone, "ID", oid)
+                set_text(clone, "Position", format_position(final_position))
             else:
                 set_text(clone, "ID", oid)
                 if folder is not None:

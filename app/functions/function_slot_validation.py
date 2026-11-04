@@ -68,11 +68,18 @@ def game_records(root):
                 continue
             if object_id in records:
                 raise ValueError(f"Duplicate Gamedata ID {object_id}.")
+            owner = None
+            if local_tag(parent) == "objects":
+                owner = next(
+                    (candidate for candidate in root.iter() if parent in list(candidate)),
+                    None,
+                )
             records[object_id] = {
                 "id": object_id,
                 "guid": guid,
                 "position": parse_position(position),
                 "folder": direct_text(node, "ObjectFolderID"),
+                "container": local_tag(owner) if owner is not None else "",
                 "node": node,
             }
     return records
@@ -222,6 +229,11 @@ def validate_slot_trees(map_root, game_root, strict_deposit_ids=None) -> SlotGat
             report.errors.append(
                 f"GUID mismatch for ObjectId {object_id}: "
                 f"MapName {entry['guid']} / Gamedata {record['guid']}."
+            )
+        if record.get("container") != "GameObject":
+            report.errors.append(
+                f"Slot ObjectId {object_id} ({record['guid']}) is stored under "
+                f"{record.get('container') or 'unknown'}/objects; expected GameObject/objects."
             )
         if entry["guid"] in SINGLE_SLOT_GUIDS and entry["category"] != "1":
             report.errors.append(

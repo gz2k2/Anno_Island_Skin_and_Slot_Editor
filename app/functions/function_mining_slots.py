@@ -22,12 +22,35 @@ class MiningSlotEditingMixin:
     MINE_MIN_DISTANCE = 2.0
     MINE_MAX_DISTANCE = 20.0
 
+    # MineSlot assets use a raster-aligned facing in the native data. Snap only
+    # the MineSlot visual/Direction to this increment; the Work Area and its
+    # BezierPath still follow the exact two-click vector. Set to 0 to disable.
+    # Placement/orientation snap in degrees. Useful test values: 15.0, 30.0, 45.0.
+    # Set <= 0 to disable angular snapping.
+    MINE_ORIENTATION_SNAP_DEGREES = 90.0
+    # Optional fine adjustment after deriving 1000253 orientation from the
+    # direct Work Area -> MineSlot axis. Terrain curvature must not rotate it.
+    MINE_WORKAREA_PATH_DIRECTION_OFFSET_DEGREES = 0.0
+    # Radius of the MineSlot placement helper circle in world-coordinate units.
+    MINE_PLACEMENT_CIRCLE_RADIUS = 2.5
+
+    # Native 1000253 paths do not run from object-center to object-center.
+    # The Work Area end starts ~0.6158 world units behind its object anchor,
+    # while the MineSlot end stops 0.5 world units in front of the MineSlot.
+    # These values are visible consistently in the original slots of the map.
+    MINE_PATH_WORKAREA_ANCHOR_OFFSET = 0.6158
+    MINE_PATH_MINESLOT_ANCHOR_OFFSET = 0.5
+
+    # Native 100419 curves start roughly 1.34 horizontal world units outside
+    # the 100419 object anchor, on the side away from the MineSlot.
+    MINE_CAVE_PATH_START_OFFSET = 1.34
+
     # ---------------------------------------------------------------------
     # Inner Work Area / Cave object 100419
     # ---------------------------------------------------------------------
     # Preferred forward distance, in world units, from the MineSlot toward the
     # outer Work Area. Native examples place 100419 about five units away.
-    MINE_CAVE_ALONG_DISTANCE = 5.08
+    MINE_CAVE_ALONG_DISTANCE = 5.0
 
     # Lower and upper limits for the relative 100419 position along the full
     # MineSlot -> outer Work Area distance. Example: 0.25 means 25 percent.
@@ -39,7 +62,7 @@ class MiningSlotEditingMixin:
     # Horizontal sideways displacement of 100419 from the direct MineSlot ->
     # Work Area line, in world units. Both sides are tested against the
     # HeightMap; the candidate on the higher valid rock surface is selected.
-    MINE_CAVE_LATERAL_OFFSET = 1.17
+    MINE_CAVE_LATERAL_OFFSET = 1.15
 
     # Multiplier applied only to the calculated absolute Y position of 100419.
     # 1.0 keeps the HeightMap result, 1.05 raises it by five percent, and 0.95
@@ -60,11 +83,31 @@ class MiningSlotEditingMixin:
     # lower them. This is added after HeightMap sampling and PATH_CLEARANCE.
     MINE_PATH_HEIGHT_OFFSET = 0.2
 
+    # Additional lift for generated Mine Bezier control points. The control
+    # point directly at the 1000253 side stays at its existing terrain height;
+    # all following points are raised by this amount. Keep this separate from
+    # MINE_PATH_HEIGHT_OFFSET so the existing endpoint tuning is preserved.
+    MINE_PATH_EXTRA_LIFT = 0.3
+
     # Radius, in horizontal world units, around every Bezier point used for its
     # HeightMap footprint check. The center, four cardinal directions and four
     # diagonals are sampled; the highest result is used. A larger value protects
     # wider rails from nearby rock but can lift paths beside steep cliffs.
     MINE_PATH_FOOTPRINT_RADIUS = 0.45
+
+    # Adaptive Bezier density calibrated against 185 native mine packages.
+    # Distance supplies the base density; terrain variation adds detail.
+    MINE_PATH_DISTANCE_STEP = 1.75
+    MINE_PATH_ROUGHNESS_HEIGHT = 0.75
+    MINE_CAVE_PATH_MIN_POINTS = 2
+    MINE_CAVE_PATH_MAX_POINTS = 8
+    MINE_WORKAREA_PATH_MIN_POINTS = 5
+    MINE_WORKAREA_PATH_MAX_POINTS = 13
+    MINE_PATH_PROFILE_SAMPLES = 33
+    # Restrained native-style outer path geometry.
+    MINE_WORKAREA_PATH_POINTS = 9
+    MINE_PATH_MAX_LATERAL_OFFSET = 0.35
+    MINE_PATH_MAX_HANDLE_LENGTH = 0.90
 
     # ---------------------------------------------------------------------
     # Generated object positions (not BezierPath points)
@@ -77,7 +120,7 @@ class MiningSlotEditingMixin:
     # objects: outer Work Area 1000253 and inner Cave/Work Area 100419.
     # It changes the object anchors, but MINE_PATH_HEIGHT_OFFSET independently
     # controls the generated rail/path elevation.
-    MINE_WORKAREAS_HEIGHT_OFFSET = 5.0
+    MINE_WORKAREAS_HEIGHT_OFFSET = 0.4
 
     def _mine_path_surface_height(self, x, z, samples):
         """Return the highest bilinear HeightMap sample below the rail footprint."""
@@ -95,28 +138,20 @@ class MiningSlotEditingMixin:
         heights = [height for height in heights if height is not None]
         return max(heights) if heights else None
     def _island_slot_add_mineslot_at_event(self, event, display_name, guid):
-        """Start two-click mine placement; do not change XML yet."""
+        """Enter free two-click MineSlot placement; the menu click is not a placement click."""
         self._island_slot_cancel_mine_placement(silent=True)
-        x, z = self._island_slot_world(event)
-        x, z = math.floor(x) + 0.5, math.floor(z) + 0.5
         samples, source = self._island_slot_height_samples()
-        y = self._river_terrain_height(x, z, samples)
-        if y is None or y <= 0:
-            messagebox.showerror(
-                "Add Mine Slot", "Mine entrance must be placed on emerged terrain.",
-                parent=self.slot_map_window)
-            return
         self._mine_placement = {
             "kind": "mine", "name": display_name, "guid": str(guid),
-            "entrance": (x, y, z), "samples": samples, "source": source,
+            "entrance": None, "samples": samples, "source": source,
         }
         self.slot_map_allow_dot_movement_var.set(False)
         self._slot_map_dot_movement_changed()
         self.slot_map_canvas.focus_set()
         self.status_var.set(
-            f"Mine entrance selected at X/Z {x:g} / {z:g}. "
-            "Left-click to place the Work Area; right-click or Esc to cancel.")
-        self._island_slot_draw_mine_preview(None)
+            "Move the mouse and left-click to place the Mine entrance; "
+            "right-click or Esc to cancel.")
+        self._island_slot_draw_mine_preview(event)
 
     def _island_slot_commit_mine_pair(self, placement, entrance, mountain, status):
         """Atomically generate Mine, Work Area and a nine-point terrain path."""
@@ -148,7 +183,9 @@ class MiningSlotEditingMixin:
         # Work Area, Mine and Cave are one native logical family.
         mine_id, work_id, cave_id = allocate_verified_id_family(
             map_root, game_root, used, 3)
-        folder = new_folder_id(records)
+        # Generated Mine, Work Area and Cave objects use the neutral runtime folder,
+        # matching Island Editor's proven Gamedata integration.
+        folder = "0"
         mine_position = (
             entrance[0], entrance[1] + self.MINE_SLOT_HEIGHT_OFFSET, entrance[2])
         workarea_position = (
@@ -167,8 +204,6 @@ class MiningSlotEditingMixin:
         # five units from the MineSlot and normally offset sideways. Native
         # examples use both sides, so evaluate both candidates against the
         # HeightMap and choose the higher rock surface.
-        original_cave_position = parse_position(text(cave, "Position"))
-        original_master_direction = math.pi
         axis_x = mountain[0] - entrance[0]
         axis_z = mountain[2] - entrance[2]
         axis_length = math.hypot(axis_x, axis_z)
@@ -207,49 +242,57 @@ class MiningSlotEditingMixin:
         )
         set_text(cave, "ID", cave_id)
         set_text(cave, "ObjectFolderID", folder)
-        target_cave_rotation = (-math.atan2(
-            mountain[0] - entrance[0], mountain[2] - entrance[2]
-        ) + math.pi / 2.0) % (2.0 * math.pi)
-        rotation_delta = math.degrees(
-            target_cave_rotation - original_master_direction)
-        rotate_clone_y(cave, original_cave_position, rotation_delta)
-        dx = cave_midpoint[0] - original_cave_position[0]
-        dz = cave_midpoint[2] - original_cave_position[2]
-        relocate_clone(
-            cave, dx, dz,
-            lambda x, z: (
-                (surface + self.MINE_PATH_CLEARANCE + self.MINE_PATH_HEIGHT_OFFSET)
-                if (surface := self._mine_path_surface_height(
-                    x, z, placement["samples"])) is not None else None
-            ),
-        )
-        # relocate_clone follows terrain for every path point. Set the Cave's
-        # object anchor explicitly to the exact requested midpoint afterwards.
         set_text(cave, "Position", format_position(cave_midpoint))
+
+        # Templates contain captured runtime animation timestamps. New objects must
+        # start in a neutral sequence state, as done by Island Editor.
+        for runtime_node in (mine, workarea, cave):
+            mesh = direct(runtime_node, "Mesh")
+            sequence = direct(mesh, "SequenceData") if mesh is not None else None
+            start = direct(sequence, "CurrentSequenceStartTime") if sequence is not None else None
+            if start is None:
+                raise ValueError(
+                    f"Generated slot object {text(runtime_node, 'guid')} lacks "
+                    "Mesh/SequenceData/CurrentSequenceStartTime."
+                )
+            start.text = "0"
+        # 100419 path geometry is generated only after the shared MineSlot
+        # connector has been calculated. Do not rotate/relocate its clone: that
+        # used the template pivot and separated the path from the object anchor.
 
         direction = math.atan2(
             mountain[0] - entrance[0],
             mountain[2] - entrance[2],
         )
-        # Mesh/Orientation controls the correctly aligned unbuilt mine graphic
-        # and is handled separately below. The constructed 1000029 building uses
-        # Direction with a +90-degree asset offset, but its horizontal X axis is
-        # mirrored: up/down are correct while left/right must be exchanged.
-        # All three variants are configured as 1000029 master objects before
-        # the GUID swap, so all three use the same verified master Direction.
-        mine_direction = (-direction + math.pi / 2.0) % (2.0 * math.pi)
-        for node, node_direction in (
-            (mine, mine_direction),
-            (workarea, direction),
-        ):
-            dn = direct(node, "Direction")
-            if dn is None:
-                dn = ET.Element("Direction")
-                pos = direct(node, "Position")
-                node.insert(list(node).index(pos) + 1, dn)
-            dn.text = game_number(node_direction)
+        # MineSlot and Work Area use one shared 45-degree placement axis.
+        # The second placement point is snapped before commit, so both objects
+        # and the connector path are derived from the same exact direction.
+        mine_direction = direction % (2.0 * math.pi)
+        snap_degrees = float(self.MINE_ORIENTATION_SNAP_DEGREES)
+        if snap_degrees > 0.0:
+            snap_radians = math.radians(snap_degrees)
+            mine_direction = (
+                round(mine_direction / snap_radians) * snap_radians
+            ) % (2.0 * math.pi)
+        # 1000029 uses its raster-snapped facing. 1000253 is intentionally
+        # excluded here: its final Direction is derived from the native template
+        # after build_mining_curve has calculated the real path rotation.
+        mine_direction_node = direct(mine, "Direction")
+        if mine_direction_node is None:
+            mine_direction_node = ET.Element("Direction")
+            mine_position_node = direct(mine, "Position")
+            mine.insert(list(mine).index(mine_position_node) + 1,
+                        mine_direction_node)
+        mine_object_direction = (mine_direction + (math.pi / 2.0)) % (2.0 * math.pi)
+        # Native 1000029 has the opposite facing on the horizontal X placement
+        # axis. Keep vertical cases unchanged and do not touch Work Area 1000253.
+        placement_dx = mountain[0] - entrance[0]
+        placement_dz = mountain[2] - entrance[2]
+        if abs(placement_dx) > abs(placement_dz):
+            mine_object_direction = (mine_object_direction + math.pi) % (2.0 * math.pi)
+        mine_direction_node.text = game_number(mine_object_direction)
 
-        # Direction and the Slot Map arrow are already correct. Do not rotate
+        # Native MineSlot direction equals the snapped placement/path axis. Do not rotate
         # the cloned quaternion relatively. Build the MineSlot yaw quaternion
         # directly from that Direction. Native 1000029 uses yaw = -Direction
         # (for example Direction +PI/2 corresponds to Orientation Y -0.7071).
@@ -257,118 +300,213 @@ class MiningSlotEditingMixin:
         orientation = direct(mesh, "Orientation") if mesh is not None else None
         if orientation is None:
             raise ValueError("MineSlot master template has no Mesh/Orientation.")
-        # Runtime facing swaps the map's X/Z angle basis. Convert the
-        # already-correct Mine -> Work Area direction by reflecting the angle
-        # across the X/Z diagonal: up->up, right->right, left->left, down->down.
-        orientation_direction = math.pi / 2.0 - direction
-        half_yaw = orientation_direction / 2.0
+        # Build the quaternion from the same snapped Direction written above.
+        # This prevents Direction and Mesh/Orientation from representing two
+        # different facings when the click vector is not axis-aligned.
+        half_yaw = mine_object_direction / 2.0
         orientation.text = " ".join(game_number(value) for value in (
             0.0,
             -math.sin(half_yaw),
             0.0,
             math.cos(half_yaw),
         ))
-        # Keep the native nine-point Mine Work Area curve, but store it in
-        # local coordinates relative to the Work Area. This mirrors the
-        # verified custom River Work Area format: p=0/0/0 at the Work Area and
-        # the final point reaches the MineSlot with a relative height delta.
-        curve = next((node for node in workarea.iter()
-                      if tag(node) == "BezierCurve"), None)
-        if curve is None or len(curve) < 2:
-            raise ValueError("Work Area template has no usable BezierCurve.")
-        template_items = list(curve)
-        template_points = [parse_position(text(item, "p"))
-                           for item in template_items]
-        source_start, source_end = template_points[0], template_points[-1]
-        source_dx = source_end[0] - source_start[0]
-        source_dz = source_end[2] - source_start[2]
-        source_length = math.hypot(source_dx, source_dz)
-        target_dx = entrance[0] - mountain[0]
-        target_dz = entrance[2] - mountain[2]
-        target_length = math.hypot(target_dx, target_dz)
-        if source_length <= 0.000001 or target_length <= 0.000001:
+        # Native mine paths use connector anchors rather than the centers of
+        # 1000253 and 1000029.  Start slightly behind the Work Area and stop
+        # half a unit before the MineSlot.  The MineSlot side follows its
+        # raster-snapped facing, matching the original game's +/-0.5 X/Z ends.
+        axis_to_mine_x = entrance[0] - mountain[0]
+        axis_to_mine_z = entrance[2] - mountain[2]
+        axis_to_mine_length = math.hypot(axis_to_mine_x, axis_to_mine_z)
+        if axis_to_mine_length <= 0.000001:
             raise ValueError("Mine Work Area BezierPath has zero length.")
-        source_angle = math.atan2(source_dz, source_dx)
-        target_angle = math.atan2(target_dz, target_dx)
-        rotation = target_angle - source_angle
-        cosine, sine = math.cos(rotation), math.sin(rotation)
-        scale = target_length / source_length
-        height_delta = entrance[1] - mountain[1]
-
-        def transform_local_xz(x_value, z_value):
-            scaled_x, scaled_z = x_value * scale, z_value * scale
-            return (scaled_x * cosine - scaled_z * sine,
-                    scaled_x * sine + scaled_z * cosine)
-
-        local_points = []
-        new_items = []
-        count = len(template_items)
-        for index, (item, source_point) in enumerate(
-                zip(template_items, template_points)):
-            relative_x = source_point[0] - source_start[0]
-            relative_z = source_point[2] - source_start[2]
-            local_x, local_z = transform_local_xz(relative_x, relative_z)
-
-            # Use the same local-coordinate convention as RiverSlots, but
-            # derive every Mine path point from the real HeightMap. This keeps
-            # the connector on the rock surface instead of cutting through it.
-            world_x = mountain[0] + local_x
-            world_z = mountain[2] + local_z
-            terrain_y = self._mine_path_surface_height(
-                world_x, world_z, placement["samples"])
-            if terrain_y is None:
-                progress = index / (count - 1)
-                terrain_y = mountain[1] + height_delta * progress
-            # The Bezier points represent the rail centerline, not bare ground.
-            # Keep the complete footprint above the highest nearby terrain.
-            local_y = terrain_y + self.MINE_PATH_CLEARANCE + self.MINE_PATH_HEIGHT_OFFSET - mountain[1]
-            point = (local_x, local_y, local_z)
-            local_points.append(point)
-
-            replacement = ET.Element("None")
-            ET.SubElement(replacement, "p").text = format_position(point)
-            for tangent_name in ("i", "o"):
-                tangent = parse_position(text(item, tangent_name))
-                tangent_x, tangent_z = transform_local_xz(
-                    tangent[0], tangent[2])
-                # Native Y tangents belong to the source mountain profile and
-                # can pull the cubic segment below the target HeightMap. Keep
-                # horizontal curvature, but make vertical interpolation monotone.
-                tangent_value = (tangent_x, 0.0, tangent_z)
-                ET.SubElement(replacement, tangent_name).text = format_position(
-                    tangent_value)
-            new_items.append(replacement)
-
-        # Preserve exact X/Z anchors, but never force Y back to the object
-        # anchors: those are terrain-level and made the first/last rail pieces
-        # intersect the rock. Re-sample both complete rail footprints instead.
-        endpoint_specs = (
-            (0, mountain[0], mountain[2], 0.0, 0.0),
-            (-1, entrance[0], entrance[2], target_dx, target_dz),
+        axis_unit_x = axis_to_mine_x / axis_to_mine_length
+        axis_unit_z = axis_to_mine_z / axis_to_mine_length
+        path_start = (
+            mountain[0] - axis_unit_x * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
+            mountain[2] - axis_unit_z * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
         )
-        for item_index, world_x, world_z, local_x, local_z in endpoint_specs:
-            surface = self._mine_path_surface_height(
-                world_x, world_z, placement["samples"])
-            if surface is None:
-                surface = mountain[1] if item_index == 0 else entrance[1]
-            point = (local_x,
-                     surface + self.MINE_PATH_CLEARANCE + self.MINE_PATH_HEIGHT_OFFSET - mountain[1],
-                     local_z)
-            local_points[item_index] = point
-            direct(new_items[item_index], "p").text = format_position(point)
-        for child in list(curve):
-            curve.remove(child)
-        for item in new_items:
-            curve.append(item)
+        # Select the cardinal direction which points from MineSlot toward the
+        # Work Area. This reproduces the native 0.5-unit connector offset even
+        # when the user's second click is not perfectly axis-aligned.
+        toward_work_x = mountain[0] - entrance[0]
+        toward_work_z = mountain[2] - entrance[2]
+        if abs(toward_work_x) >= abs(toward_work_z):
+            mine_connector_x = math.copysign(self.MINE_PATH_MINESLOT_ANCHOR_OFFSET, toward_work_x)
+            mine_connector_z = 0.0
+        else:
+            mine_connector_x = 0.0
+            mine_connector_z = math.copysign(self.MINE_PATH_MINESLOT_ANCHOR_OFFSET, toward_work_z)
+        path_end = (entrance[0] + mine_connector_x, entrance[2] + mine_connector_z)
 
-        path = curve.getparent()
-        minimum, maximum = direct(path, "Minimum"), direct(path, "Maximum")
-        if minimum is None or maximum is None:
-            raise ValueError("Mine Work Area template lacks Bezier bounds.")
-        minimum.text = format_position(tuple(
-            min(point[axis] for point in local_points) for axis in range(3)))
-        maximum.text = format_position(tuple(
-            max(point[axis] for point in local_points) for axis in range(3)))
+        def build_mining_curve(node, target_start, target_end, label):
+            """Build a restrained terrain-following mining Bezier curve."""
+            target_curve = next((child for child in node.iter()
+                                 if tag(child) == "BezierCurve"), None)
+            if target_curve is None or len(target_curve) < 2:
+                raise ValueError(f"{label} template has no usable BezierCurve.")
+            source_points = [parse_position(text(item, "p")) for item in target_curve]
+            source_start, source_end = source_points[0], source_points[-1]
+            source_dx = source_end[0] - source_start[0]
+            source_dz = source_end[2] - source_start[2]
+            source_length = math.hypot(source_dx, source_dz)
+            target_dx = target_end[0] - target_start[0]
+            target_dz = target_end[1] - target_start[1]
+            target_length = math.hypot(target_dx, target_dz)
+            if source_length <= 0.000001 or target_length <= 0.000001:
+                raise ValueError(f"{label} BezierPath has zero length.")
+
+            is_workarea = "1000253" in label
+            if is_workarea:
+                point_count = max(2, int(self.MINE_WORKAREA_PATH_POINTS))
+            else:
+                point_count = max(
+                    self.MINE_CAVE_PATH_MIN_POINTS,
+                    min(self.MINE_CAVE_PATH_MAX_POINTS,
+                        int(math.ceil(target_length / max(0.25, self.MINE_PATH_DISTANCE_STEP))) + 1),
+                )
+
+            target_ux, target_uz = target_dx / target_length, target_dz / target_length
+            target_nx, target_nz = -target_uz, target_ux
+            source_ux, source_uz = source_dx / source_length, source_dz / source_length
+            source_nx, source_nz = -source_uz, source_ux
+
+            def source_lateral(progress):
+                pos = progress * (len(source_points) - 1)
+                left = min(len(source_points) - 1, int(math.floor(pos)))
+                right = min(len(source_points) - 1, left + 1)
+                blend = pos - left
+                px = source_points[left][0] * (1.0 - blend) + source_points[right][0] * blend
+                pz = source_points[left][2] * (1.0 - blend) + source_points[right][2] * blend
+                line_x = source_start[0] + source_dx * progress
+                line_z = source_start[2] + source_dz * progress
+                lateral = (px - line_x) * source_nx + (pz - line_z) * source_nz
+                limit = max(0.0, float(self.MINE_PATH_MAX_LATERAL_OFFSET))
+                return max(-limit, min(limit, lateral))
+
+            points = []
+            for index in range(point_count):
+                progress = index / max(1, point_count - 1)
+                lateral = (0.0 if index in (0, point_count - 1)
+                           else source_lateral(progress))
+                world_x = target_start[0] + target_dx * progress + target_nx * lateral
+                world_z = target_start[1] + target_dz * progress + target_nz * lateral
+                surface = self._mine_path_surface_height(world_x, world_z, placement["samples"])
+                if surface is None:
+                    surface = mountain[1] * (1.0 - progress) + entrance[1] * progress
+                extra_lift = 0.0 if index == 0 else self.MINE_PATH_EXTRA_LIFT
+                points.append((world_x, surface + self.MINE_PATH_CLEARANCE
+                               + self.MINE_PATH_HEIGHT_OFFSET + extra_lift, world_z))
+
+            start_surface = self._mine_path_surface_height(target_start[0], target_start[1], placement["samples"])
+            if start_surface is None:
+                start_surface = mountain[1]
+            points[0] = (target_start[0], start_surface + self.MINE_PATH_CLEARANCE
+                         + self.MINE_PATH_HEIGHT_OFFSET, target_start[1])
+            points[-1] = (target_end[0], mine_position[1], target_end[1])
+
+            items = []
+            handle_cap = max(0.05, float(self.MINE_PATH_MAX_HANDLE_LENGTH))
+            for index, point in enumerate(points):
+                previous_point = points[max(0, index - 1)]
+                next_point = points[min(len(points) - 1, index + 1)]
+                secant = tuple(next_point[a] - previous_point[a] for a in range(3))
+                secant_length = math.sqrt(sum(v * v for v in secant))
+                unit = ((target_ux, 0.0, target_uz) if secant_length <= 0.000001
+                        else tuple(v / secant_length for v in secant))
+                runs = []
+                if index > 0:
+                    runs.append(math.dist(point, points[index - 1]))
+                if index + 1 < len(points):
+                    runs.append(math.dist(point, points[index + 1]))
+                handle_length = min(handle_cap, (min(runs) if runs else 0.0) / 3.0)
+                outgoing = tuple(v * handle_length for v in unit)
+                incoming = tuple(-v for v in outgoing)
+                item = ET.Element("None")
+                ET.SubElement(item, "p").text = format_position(point)
+                ET.SubElement(item, "i").text = format_position(incoming)
+                ET.SubElement(item, "o").text = format_position(outgoing)
+                items.append(item)
+
+            for child in list(target_curve):
+                target_curve.remove(child)
+            for item in items:
+                target_curve.append(item)
+            path = target_curve.getparent()
+            minimum, maximum = direct(path, "Minimum"), direct(path, "Maximum")
+            if minimum is None or maximum is None:
+                raise ValueError(f"{label} template lacks Bezier bounds.")
+            minimum.text = format_position(tuple(min(p[a] for p in points) for a in range(3)))
+            maximum.text = format_position(tuple(max(p[a] for p in points) for a in range(3)))
+            return points, math.atan2(target_dz, target_dx)
+
+        # Generate 100419 independently, but make it share 1000029's exact
+        # connector with 1000253. Its start lies outside the Cave anchor on the
+        # side away from the MineSlot, as in the native groups.
+        cave_to_mine_x = path_end[0] - cave_midpoint[0]
+        cave_to_mine_z = path_end[1] - cave_midpoint[2]
+        cave_to_mine_length = math.hypot(cave_to_mine_x, cave_to_mine_z)
+        if cave_to_mine_length <= 0.000001:
+            raise ValueError("Cave and MineSlot connector are identical.")
+        cave_unit_x = cave_to_mine_x / cave_to_mine_length
+        cave_unit_z = cave_to_mine_z / cave_to_mine_length
+        cave_start = (
+            cave_midpoint[0] - cave_unit_x * self.MINE_CAVE_PATH_START_OFFSET,
+            cave_midpoint[2] - cave_unit_z * self.MINE_CAVE_PATH_START_OFFSET,
+        )
+        cave_points, _cave_path_rotation = build_mining_curve(
+            cave, cave_start, path_end, "Mine Cave 100419")
+        cave_direction = math.atan2(cave_to_mine_x, cave_to_mine_z)
+        cave_direction_node = direct(cave, "Direction")
+        if cave_direction_node is None:
+            cave_direction_node = ET.Element("Direction")
+            cave_position_node = direct(cave, "Position")
+            cave.insert(list(cave).index(cave_position_node) + 1,
+                        cave_direction_node)
+        cave_direction_node.text = game_number(cave_direction)
+        cave_mesh = direct(cave, "Mesh")
+        cave_orientation = direct(cave_mesh, "Orientation") if cave_mesh is not None else None
+        if cave_orientation is not None:
+            cave_half_yaw = cave_direction / 2.0
+            cave_orientation.text = " ".join(game_number(value) for value in (
+                0.0, -math.sin(cave_half_yaw), 0.0,
+                math.cos(cave_half_yaw)))
+        workarea_points, workarea_path_rotation = build_mining_curve(
+            workarea, path_start, path_end, "Mine Work Area 1000253")
+
+        # Orient 1000253 from the direct Work Area -> MineSlot axis. The Bezier
+        # is intentionally ignored so terrain shaping cannot rotate the object.
+        workarea_axis_x = entrance[0] - mountain[0]
+        workarea_axis_z = entrance[2] - mountain[2]
+        if math.hypot(workarea_axis_x, workarea_axis_z) <= 0.000001:
+            raise ValueError("Mine Work Area 1000253 placement axis is zero-length.")
+        # 1000253 orientation is independent from Bezier curvature. Native mine
+        # pairs use the exact opposite raster direction of 1000029.
+        workarea_direction = (mine_direction + math.pi) % (2.0 * math.pi)
+        workarea_direction_node = direct(workarea, "Direction")
+        if workarea_direction_node is None:
+            workarea_direction_node = ET.Element("Direction")
+            workarea_position_node = direct(workarea, "Position")
+            workarea.insert(list(workarea).index(workarea_position_node) + 1, workarea_direction_node)
+        workarea_object_direction = (workarea_direction + (math.pi / 2.0)) % (2.0 * math.pi)
+        # Mirror 1000253 on the opposite local model axis. In the model's rotated
+        # coordinate convention this corrects left/right without the previous
+        # horizontal-angle negation that also inverted the visual up/down cases.
+        workarea_object_direction = (math.pi - workarea_object_direction) % (2.0 * math.pi)
+        workarea_direction_node.text = game_number(workarea_object_direction)
+        workarea_mesh = direct(workarea, "Mesh")
+        workarea_orientation = direct(workarea_mesh, "Orientation") if workarea_mesh is not None else None
+        if workarea_orientation is not None:
+            half = workarea_object_direction / 2.0
+            workarea_orientation.text = " ".join(game_number(v) for v in (
+                0.0, -math.sin(half), 0.0, math.cos(half)))
+
+        # Both generated paths must terminate at the exact same 1000029 anchor.
+        connector_error = math.sqrt(sum(
+            (cave_points[-1][axis] - workarea_points[-1][axis]) ** 2
+            for axis in range(3)))
+        if connector_error > 0.001:
+            raise ValueError(
+                "100419 and 1000253 do not share the MineSlot connector.")
         StatusWindowTemplate.update(status,fraction=.7)
         append_pretty(container,mine); append_pretty(container,workarea); append_pretty(container,cave)
         append_map_entry(map_root,MINE_PRIMARY_GROUP,mine_id,target_guid,format_position(mine_position))
