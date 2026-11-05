@@ -81,15 +81,18 @@ class MiningSlotEditingMixin:
     # the technical safety distance that prevents rails from entering rock.
     MINE_PATH_CLEARANCE = 0.40
 
-    # Additional user-tuning offset, in world-height units, for both generated
-    # Mining BezierPaths. Positive values raise all path points; negative values
-    # lower them. This is added after HeightMap sampling and PATH_CLEARANCE.
+    # Additional user-tuning offset, in world-height units, for HeightMap-based
+    # Mining BezierPath control points. Object-anchored Work Area endpoints use
+    # their own offsets below.
     MINE_PATH_HEIGHT_OFFSET = 0.2
 
-    # Additional lift for generated Mine Bezier control points. The control
-    # point directly at the 1000253 side stays at its existing terrain height;
-    # all following points are raised by this amount. Keep this separate from
-    # MINE_PATH_HEIGHT_OFFSET so the existing endpoint tuning is preserved.
+    # Extra Y offsets, in world-height units, for the Work Area Bezier endpoints.
+    # Zero keeps each endpoint exactly level with its corresponding object.
+    MINE_PATH_MINESLOT_HEIGHT_OFFSET = 0.0
+    MINE_PATH_WORKAREA_HEIGHT_OFFSET = 0.0
+
+    # Additional lift, in world-height units, for interior Mine Bezier control
+    # points. The endpoints are pinned separately to their object heights.
     MINE_PATH_EXTRA_LIFT = 0.3
 
     # Radius, in horizontal world units, around every Bezier point used for its
@@ -123,6 +126,23 @@ class MiningSlotEditingMixin:
     # It does not change generated rail elevation, which is controlled by
     # MINE_PATH_HEIGHT_OFFSET.
     MINE_WORKAREA_HEIGHT_OFFSET = 0.4
+
+    def mine_workarea_path_endpoints(
+            self, mine_position, workarea_position,
+            mine_path_anchor, workarea_path_anchor):
+        """Return MineSlot-to-Work-Area Bezier endpoints at object-relative heights."""
+        return (
+            (
+                mine_path_anchor[0],
+                mine_position[1] + self.MINE_PATH_MINESLOT_HEIGHT_OFFSET,
+                mine_path_anchor[1],
+            ),
+            (
+                workarea_path_anchor[0],
+                workarea_position[1] + self.MINE_PATH_WORKAREA_HEIGHT_OFFSET,
+                workarea_path_anchor[1],
+            ),
+        )
 
     def _mine_path_surface_height(self, x, z, samples):
         """Return the highest bilinear HeightMap sample below the rail footprint."""
@@ -323,7 +343,7 @@ class MiningSlotEditingMixin:
             raise ValueError("Mine Work Area BezierPath has zero length.")
         axis_unit_x = axis_to_mine_x / axis_to_mine_length
         axis_unit_z = axis_to_mine_z / axis_to_mine_length
-        path_start = (
+        workarea_path_anchor = (
             mountain[0] - axis_unit_x * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
             mountain[2] - axis_unit_z * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
         )
@@ -338,9 +358,11 @@ class MiningSlotEditingMixin:
         else:
             mine_connector_x = 0.0
             mine_connector_z = math.copysign(self.MINE_PATH_MINESLOT_ANCHOR_OFFSET, toward_work_z)
-        path_end = (entrance[0] + mine_connector_x, entrance[2] + mine_connector_z)
+        mine_path_anchor = (entrance[0] + mine_connector_x, entrance[2] + mine_connector_z)
 
-        def build_mining_curve(node, target_start, target_end, label):
+        def build_mining_curve(
+            node, target_start, target_end, label, *,
+            start_position=None, end_position=None):
             """Build a restrained terrain-following mining Bezier curve."""
             target_curve = next((child for child in node.iter()
                                  if tag(child) == "BezierCurve"), None)
@@ -402,9 +424,16 @@ class MiningSlotEditingMixin:
             start_surface = self._mine_path_surface_height(target_start[0], target_start[1], placement["samples"])
             if start_surface is None:
                 start_surface = mountain[1]
-            points[0] = (target_start[0], start_surface + self.MINE_PATH_CLEARANCE
-                         + self.MINE_PATH_HEIGHT_OFFSET, target_start[1])
-            points[-1] = (target_end[0], mine_position[1], target_end[1])
+            points[0] = (
+                (target_start[0],
+                 start_surface + self.MINE_PATH_CLEARANCE + self.MINE_PATH_HEIGHT_OFFSET,
+                 target_start[1])
+                if start_position is None else start_position
+            )
+            points[-1] = (
+                (target_end[0], mine_position[1], target_end[1])
+                if end_position is None else end_position
+            )
 
             items = []
             handle_cap = max(0.05, float(self.MINE_PATH_MAX_HANDLE_LENGTH))
@@ -444,8 +473,8 @@ class MiningSlotEditingMixin:
         # Generate 100419 independently, but make it share 1000029's exact
         # connector with 1000253. Its start lies outside the Cave anchor on the
         # side away from the MineSlot, as in the native groups.
-        cave_to_mine_x = path_end[0] - cave_midpoint[0]
-        cave_to_mine_z = path_end[1] - cave_midpoint[2]
+        cave_to_mine_x = mine_path_anchor[0] - cave_midpoint[0]
+        cave_to_mine_z = mine_path_anchor[1] - cave_midpoint[2]
         cave_to_mine_length = math.hypot(cave_to_mine_x, cave_to_mine_z)
         if cave_to_mine_length <= 0.000001:
             raise ValueError("Cave and MineSlot connector are identical.")
@@ -455,8 +484,15 @@ class MiningSlotEditingMixin:
             cave_midpoint[0] - cave_unit_x * self.MINE_CAVE_PATH_START_OFFSET,
             cave_midpoint[2] - cave_unit_z * self.MINE_CAVE_PATH_START_OFFSET,
         )
+        workarea_path_start, workarea_path_end = self.mine_workarea_path_endpoints(
+            mine_position,
+            workarea_position,
+            mine_path_anchor,
+            workarea_path_anchor,
+        )
         cave_points, _cave_path_rotation = build_mining_curve(
-            cave, cave_start, path_end, "Mine Cave 100419")
+            cave, cave_start, mine_path_anchor, "Mine Cave 100419",
+            end_position=workarea_path_start)
         cave_direction = math.atan2(cave_to_mine_x, cave_to_mine_z)
         cave_direction_node = direct(cave, "Direction")
         if cave_direction_node is None:
@@ -473,7 +509,12 @@ class MiningSlotEditingMixin:
                 0.0, -math.sin(cave_half_yaw), 0.0,
                 math.cos(cave_half_yaw)))
         workarea_points, workarea_path_rotation = build_mining_curve(
-            workarea, path_start, path_end, "Mine Work Area 1000253")
+            workarea,
+            mine_path_anchor, workarea_path_anchor,
+            "Mine Work Area 1000253",
+            start_position=workarea_path_start,
+            end_position=workarea_path_end,
+        )
 
         # Orient 1000253 from the direct Work Area -> MineSlot axis. The Bezier
         # is intentionally ignored so terrain shaping cannot rotate the object.
@@ -502,9 +543,9 @@ class MiningSlotEditingMixin:
             workarea_orientation.text = " ".join(game_number(v) for v in (
                 0.0, -math.sin(half), 0.0, math.cos(half)))
 
-        # Both generated paths must terminate at the exact same 1000029 anchor.
+        # Both generated paths share the object-relative MineSlot endpoint.
         connector_error = math.sqrt(sum(
-            (cave_points[-1][axis] - workarea_points[-1][axis]) ** 2
+            (cave_points[-1][axis] - workarea_points[0][axis]) ** 2
             for axis in range(3)))
         if connector_error > 0.001:
             raise ValueError(
