@@ -428,14 +428,9 @@ class FinalizeTabMixin:
     def _finalize_uses_integrated_riverslots(self):
         """Return whether bundled Integrated RiverSlot content is required.
 
-        Expert Settings is the authoritative source. The Gamedata scan remains
-        as a fallback for projects created before the mode setting existed.
+        Inspect the current working tree and selected Gamedata files so the
+        requirement follows the GUIDs actually used by the project.
         """
-        mode_var = getattr(self, "river_slot_mode_var", None)
-        mode = str(mode_var.get() if mode_var is not None else "").strip().casefold()
-        if mode == "integrated":
-            return True
-
         integrated = {"2144000100", "2144000101"}
         tree = getattr(self, "_island_slot_ram_game_tree", None)
         if tree is not None:

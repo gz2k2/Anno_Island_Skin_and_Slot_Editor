@@ -1114,7 +1114,7 @@ class IslandSlotBaseMixin:
             return True
         status = StatusWindowTemplate.create(
             self.slot_map_window,
-            text=("Adding native RiverSlot pair..." if is_river else
+            text=("Adding RiverSlot pair..." if is_river else
                   f"Adding: {placement['name']}\nCreating Mine and Work Area..."),
             title=title, heading=title,
             progress=True, fraction=0, modal=True, topmost=True)

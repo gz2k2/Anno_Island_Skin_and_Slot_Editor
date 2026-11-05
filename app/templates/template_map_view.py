@@ -401,7 +401,8 @@ class MapViewTemplate:
         owner, *, title, heading="Overview map", info_variable, selection_variable,
         close_command, redraw_command, legend_builder,
         maximize_button_attribute=None, object_edit_help=False,
-        slot_edit_help=False, show_selection_status=True, **_unused,
+        slot_edit_help=False, show_selection_status=True, toolbar_builder=None,
+        **_unused,
     ):
         built = PopupTemplate.create_window(
             owner, title=title, heading=heading,
@@ -409,21 +410,28 @@ class MapViewTemplate:
         )
         window = built["window"]
         window.grid_columnconfigure(0, weight=1)
-        window.grid_rowconfigure(4, weight=1)
+        row_offset = 1 if toolbar_builder is not None else 0
+        window.grid_rowconfigure(4 + row_offset, weight=1)
         if maximize_button_attribute:
             setattr(owner, maximize_button_attribute, built["maximize_button"])
+
+        toolbar = None
+        if toolbar_builder is not None:
+            toolbar = ctk.CTkFrame(window, fg_color="transparent")
+            toolbar.grid(row=1, column=0, padx=18, pady=(0, 8), sticky="ew")
+            toolbar_builder(toolbar)
 
         ctk.CTkLabel(
             window, textvariable=info_variable,
             text_color=MapViewTemplate.SECONDARY_TEXT_COLOR,
             font=ctk.CTkFont(size=MapViewTemplate.INFO_FONT_SIZE), justify="left",
-        ).grid(row=1, column=0, padx=18, pady=(0, 8), sticky="w")
+        ).grid(row=1 + row_offset, column=0, padx=18, pady=(0, 8), sticky="w")
 
         legend = ctk.CTkFrame(window, fg_color="transparent")
-        legend.grid(row=2, column=0, padx=18, pady=(0, 8), sticky="w")
+        legend.grid(row=2 + row_offset, column=0, padx=18, pady=(0, 8), sticky="w")
 
         help_container = ctk.CTkFrame(window, corner_radius=8)
-        help_container.grid(row=3, column=0, padx=18, pady=(0, 8), sticky="ew")
+        help_container.grid(row=3 + row_offset, column=0, padx=18, pady=(0, 8), sticky="ew")
         help_container.grid_columnconfigure(0, weight=1)
         help_header = ctk.CTkFrame(help_container, fg_color="transparent")
         help_header.grid(row=0, column=0, sticky="ew")
@@ -512,7 +520,7 @@ class MapViewTemplate:
         help_button.grid(row=0, column=1, padx=8, pady=5, sticky="e")
 
         canvas = tk.Canvas(window, bg=MapViewTemplate.CANVAS_BACKGROUND, highlightthickness=0, borderwidth=0, cursor="crosshair")
-        canvas.grid(row=4, column=0, padx=18, pady=(0, 8), sticky="nsew")
+        canvas.grid(row=4 + row_offset, column=0, padx=18, pady=(0, 8), sticky="nsew")
         selection_status = None
         if show_selection_status:
             selection_status = ctk.CTkLabel(
@@ -522,11 +530,12 @@ class MapViewTemplate:
                 font=ctk.CTkFont(size=MapViewTemplate.SELECTION_FONT_SIZE), corner_radius=6,
             )
             selection_status.grid(
-                row=5, column=0, padx=18, pady=(0, 15), ipady=7, sticky="ew")
+                row=5 + row_offset, column=0, padx=18, pady=(0, 15), ipady=7, sticky="ew")
         legend_builder()
         window.after(100, redraw_command)
         return {"window": window, "canvas": canvas, "legend": legend,
                 "header": built["header"], "maximize_button": built["maximize_button"],
+            "toolbar": toolbar,
                 "help_container": help_container, "help_frame": help_frame,
                 "help_button": help_button, "help_expanded": help_expanded,
                 "selection_status": selection_status}

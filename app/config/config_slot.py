@@ -44,6 +44,30 @@ def configure_personal_river_guids(primary_guid="", workarea_guid=""):
     RIVER_GUID_FAMILIES["personal"] = definition
     RIVER_GUID_ROLE[primary_guid] = ("personal", "primary")
     RIVER_GUID_ROLE[workarea_guid] = ("personal", "workarea")
+
+
+def configure_custom_river_guids(rows):
+    """Register named custom River Slot pairs for placement and validation."""
+    for family_name in tuple(RIVER_GUID_FAMILIES):
+        if not family_name.startswith("custom:"):
+            continue
+        family = RIVER_GUID_FAMILIES.pop(family_name)
+        RIVER_GUID_ROLE.pop(str(family["primary"]), None)
+        RIVER_GUID_ROLE.pop(str(family["workarea"]), None)
+
+    for row in rows:
+        family_name = f"custom:{row['name']}"
+        definition = {
+            "name": row["name"],
+            "primary": row["river_slot_guid"],
+            "workarea": row["work_area_guid"],
+            "primary_group": "4",
+            "workarea_group": "3",
+            "folder_pairing": True,
+        }
+        RIVER_GUID_FAMILIES[family_name] = definition
+        RIVER_GUID_ROLE[definition["primary"]] = (family_name, "primary")
+        RIVER_GUID_ROLE[definition["workarea"]] = (family_name, "workarea")
 MINE_MASTER_GUID = "1000029"
 MINE_WORKAREA_GUID = "1000253"
 MINE_CAVE_GUID = "100419"

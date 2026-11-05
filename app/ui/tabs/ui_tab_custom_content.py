@@ -19,6 +19,12 @@ from app.functions.function_custom_content import (
     load_custom_objects,
     invalidate_custom_content_cache,
 )
+from app.config.config_slot import configure_custom_river_guids
+from app.functions.function_custom_river_slots import (
+    load_custom_river_slots,
+    save_custom_river_slots,
+    validate_custom_river_slots,
+)
 
 
 class CustomContentTabMixin:
@@ -35,6 +41,197 @@ class CustomContentTabMixin:
             tab, text="Objects", width=160,
             command=self._open_custom_objects,
         ).grid(row=1, column=0, padx=20, pady=(0, 12), sticky="w")
+        ctk.CTkButton(
+            tab, text="River Slots", width=160,
+            command=self._open_custom_river_slots,
+        ).grid(row=1, column=0, padx=(190, 20), pady=(0, 12), sticky="w")
+
+    def _open_custom_river_slots(self):
+        """Edit named River Slot GUID pairs and save them to user configuration."""
+        existing = getattr(self, "_custom_river_slots_window", None)
+        if existing is not None and existing.winfo_exists():
+            existing.deiconify()
+            existing.lift()
+            PopupTemplate.request_focus(existing, delay_ms=60)
+            return
+        try:
+            rows = load_custom_river_slots(self.CONFIG_FILE)
+        except (OSError, ValueError, UnicodeError) as exc:
+            messagebox.showerror(
+                "River Slots", f"Could not load River Slots:\n{exc}", parent=self,
+            )
+            return
+
+        state = {"dirty": False}
+        window = None
+
+        def close_requested():
+            """Ask before discarding unsaved changes."""
+            if state["dirty"]:
+                return messagebox.askyesno(
+                    "River Slots", "Discard unsaved changes and close?", parent=window,
+                )
+            return True
+
+        built = PopupTemplate.create_window(
+            self, title="River Slots", geometry="900x560", min_size=(700, 420),
+            close_command=close_requested, add_header=False,
+        )
+        window = built["window"]
+        self._custom_river_slots_window = window
+        window.transient(self)
+        PopupTemplate.apply_native_titlebar_controls(window)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(1, weight=1)
+
+        inputs = ctk.CTkFrame(window, fg_color="transparent")
+        inputs.grid(row=0, column=0, padx=20, pady=(20, 12), sticky="ew")
+        fields = (
+            ("name", "Name", 1),
+            ("river_slot_guid", "RiverSlot GUID", 1),
+            ("work_area_guid", "RiverSlot - Work Area GUID", 2),
+        )
+        variables = {}
+        for column, (key, title, weight) in enumerate(fields):
+            inputs.grid_columnconfigure(column, weight=weight)
+            ctk.CTkLabel(inputs, text=title).grid(
+                row=0, column=column, padx=(0, 10), sticky="w",
+            )
+            variable = tk.StringVar(master=window)
+            variables[key] = variable
+            ctk.CTkEntry(inputs, textvariable=variable).grid(
+                row=1, column=column, padx=(0, 10), sticky="ew",
+            )
+
+        table_frame = ctk.CTkFrame(window)
+        table_frame.grid(row=1, column=0, padx=20, pady=(0, 12), sticky="nsew")
+        table_frame.grid_columnconfigure(0, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
+        columns = tuple(variables)
+        headings = {
+            "name": "Name",
+            "river_slot_guid": "RiverSlot GUID",
+            "work_area_guid": "RiverSlot - Work Area GUID",
+        }
+        table = TreeviewTemplate.create(
+            table_frame, columns=columns, headings=headings,
+            min_widths={"name": 160, "river_slot_guid": 130, "work_area_guid": 190},
+            max_widths={"name": 320, "river_slot_guid": 500, "work_area_guid": 600},
+            stretch=(), dynamic_width=True, width_padding=28,
+            selectmode="browse",
+        )
+        tree = table["tree"]
+
+        def insert_record(record):
+            """Insert a normalized record into the shared table."""
+            return tree.insert("", "end", values=tuple(record[key] for key in columns))
+
+        for row in rows:
+            insert_record(row)
+
+        info = tk.StringVar(master=window, value=f"{len(rows)} River Slot(s)")
+
+        def table_rows():
+            """Return the table contents as records in display order."""
+            return [
+                dict(zip(columns, tree.item(item, "values")))
+                for item in tree.get_children("")
+            ]
+
+        def changed():
+            """Mark edits as unsaved and update the status line."""
+            state["dirty"] = True
+            info.set(f"{len(tree.get_children(''))} River Slot(s) | Unsaved changes")
+
+        def selection_changed(_event=None):
+            """Copy the selected row to the input fields for editing."""
+            selected = tree.selection()
+            if len(selected) != 1:
+                return
+            values = tree.item(selected[0], "values")
+            for key, value in zip(columns, values):
+                variables[key].set(value)
+
+        tree.bind("<<TreeviewSelect>>", selection_changed, add="+")
+
+        def validate_rows(records):
+            """Show validation errors while keeping invalid edits in the form."""
+            try:
+                return validate_custom_river_slots(records)
+            except ValueError as exc:
+                messagebox.showwarning("River Slots", str(exc), parent=window)
+                return None
+
+        def add():
+            """Append the form values after validating the complete table."""
+            record = {key: variable.get().strip() for key, variable in variables.items()}
+            records = validate_rows(table_rows() + [record])
+            if records is None:
+                return
+            item = insert_record(records[-1])
+            tree.selection_set(item)
+            tree.focus(item)
+            tree.see(item)
+            changed()
+
+        def change():
+            """Replace the selected row after validating the complete table."""
+            selected = tree.selection()
+            if len(selected) != 1:
+                messagebox.showwarning("River Slots", "Select one entry to change.", parent=window)
+                return
+            record = {key: variable.get().strip() for key, variable in variables.items()}
+            records = table_rows()
+            index = tree.index(selected[0])
+            records[index] = record
+            validated = validate_rows(records)
+            if validated is None:
+                return
+            tree.item(selected[0], values=tuple(validated[index][key] for key in columns))
+            tree.schedule_autosize()
+            changed()
+
+        def delete():
+            """Delete selected River Slot rows from the pending table."""
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("River Slots", "Select at least one entry to delete.", parent=window)
+                return
+            tree.delete(*selected)
+            for variable in variables.values():
+                variable.set("")
+            changed()
+
+        def save():
+            """Persist table contents and register the GUID pairs at runtime."""
+            records = validate_rows(table_rows())
+            if records is None:
+                return
+            try:
+                path = save_custom_river_slots(self.CONFIG_FILE, records)
+            except (OSError, ValueError, UnicodeError) as exc:
+                messagebox.showerror("River Slots", f"Could not save River Slots:\n{exc}", parent=window)
+                return
+            configure_custom_river_guids(records)
+            state["dirty"] = False
+            info.set(f"{len(records)} River Slot(s) | Saved: {path}")
+
+        actions = ctk.CTkFrame(inputs, fg_color="transparent")
+        actions.grid(row=2, column=0, columnspan=3, pady=(10, 0), sticky="e")
+        ctk.CTkButton(actions, text="Add", width=90, command=add).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(actions, text="Change", width=90, command=change).pack(side="left")
+
+        footer = ctk.CTkFrame(window, fg_color="transparent")
+        footer.grid(row=2, column=0, padx=20, pady=(0, 18), sticky="ew")
+        footer.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(footer, textvariable=info, anchor="w").grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(
+            footer, text="Delete", width=90, command=delete,
+            fg_color=PopupTemplate.DANGER_BUTTON_FG_COLOR,
+            hover_color=PopupTemplate.DANGER_BUTTON_HOVER_COLOR,
+        ).grid(row=0, column=1, padx=(0, 8))
+        ctk.CTkButton(footer, text="Save", width=100, command=save).grid(row=0, column=2)
+        PopupTemplate.request_focus(window, delay_ms=100)
 
     def _custom_objects_path(self):
         return custom_objects_path(self.CONFIG_FILE)

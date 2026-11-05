@@ -1,7 +1,6 @@
 """Specialized native RiverSlot placement methods extracted from function_island_slots."""
 
 from app.functions.function_island_slots import *  # noqa: F401,F403
-from app.config.config_slot import configure_personal_river_guids
 
 
 class RiverSlotEditingMixin:
@@ -23,54 +22,6 @@ class RiverSlotEditingMixin:
 
     # Smoothstep produces almost level transitions at Slot and Work Area.
     RIVER_PATH_SMOOTH_HEIGHT = True
-
-    def _personal_river_guids(self, *, show_error=True):
-        """Return the GUID pair selected under Expert Settings > Riverslots.
-
-        Integrated always uses the bundled GUID pair. Only Custom reads and
-        validates the user-provided GUID fields.
-        """
-        mode_var = getattr(self, "river_slot_mode_var", None)
-        mode = str(mode_var.get() if mode_var is not None else "Integrated").strip().casefold()
-        if mode != "custom":
-            primary, workarea = "2144000100", "2144000101"
-            configure_personal_river_guids(primary, workarea)
-            return primary, workarea
-
-        primary_var = getattr(self, "river_slot_guid_var", None)
-        workarea_var = getattr(self, "river_workarea_guid_var", None)
-        primary = str(primary_var.get() if primary_var is not None else "").strip()
-        workarea = str(workarea_var.get() if workarea_var is not None else "").strip()
-        reserved = (
-            {guid for family, definition in RIVER_GUID_FAMILIES.items()
-             if family != "personal"
-             for guid in (str(definition["primary"]), str(definition["workarea"]))}
-            | {str(guid) for guid in SINGLE_SLOT_GUIDS | MINE_SLOT_GUIDS}
-            | {str(MINE_WORKAREA_GUID), str(MINE_CAVE_GUID)}
-        )
-        error = None
-        if not primary or not workarea:
-            error = (
-                "River Slot GUID and Work Area GUID are required. Enter both "
-                "personal GUIDs under Settings > Expert Settings > Riverslots.")
-        elif not primary.isdigit() or int(primary) <= 0:
-            error = "River Slot GUID must be a positive numeric GUID."
-        elif not workarea.isdigit() or int(workarea) <= 0:
-            error = "Work Area GUID must be a positive numeric GUID."
-        elif primary == workarea:
-            error = "River Slot GUID and Work Area GUID must be different."
-        elif primary in reserved or workarea in reserved:
-            error = (
-                "The personal River Slot GUIDs must not reuse built-in River, "
-                "Mine, Clay, Oil or Gas slot GUIDs.")
-        if error:
-            if show_error:
-                messagebox.showerror(
-                    "RiverSlot GUIDs required", error,
-                    parent=getattr(self, "slot_map_window", None))
-            return None
-        configure_personal_river_guids(primary, workarea)
-        return primary, workarea
 
     def _river_heightmap(self):
         """Return cached (width, height, signed values) from Gamedata HeightMap."""
@@ -177,9 +128,22 @@ class RiverSlotEditingMixin:
         side = -1.0 if delta_z >= 0.0 else 1.0
         return entrance_x + side, target_z
 
+    def _slot_map_selected_river_guids(self):
+        """Return the GUID pair selected in the Slot Map River Slot Type menu."""
+        variable = getattr(self, "slot_map_river_type_var", None)
+        selected = str(variable.get() if variable is not None else "").strip()
+        guids = getattr(self, "slot_map_river_type_guids", {}).get(selected)
+        if guids is None:
+            messagebox.showerror(
+                "River Slot Type", "Select a valid River Slot Type.",
+                parent=getattr(self, "slot_map_window", None),
+            )
+            return None
+        return tuple(str(guid) for guid in guids)
+
     def _island_slot_add_riverslot_at_event(self, event):
         """Enter free two-click RiverSlot placement; the menu click is not a placement click."""
-        guids = self._personal_river_guids()
+        guids = self._slot_map_selected_river_guids()
         if guids is None:
             return
         primary_guid, workarea_guid = guids
@@ -212,10 +176,10 @@ class RiverSlotEditingMixin:
         container = game_object_container(game_root)
         primary_guid = str(placement.get("primary_guid", "")).strip()
         workarea_guid = str(placement.get("workarea_guid", "")).strip()
-        current_guids = self._personal_river_guids()
+        current_guids = self._slot_map_selected_river_guids()
         if current_guids is None or current_guids != (primary_guid, workarea_guid):
             raise ValueError(
-                "The personal RiverSlot GUID settings changed during placement. "
+            "The selected River Slot Type changed during placement. "
                 "Cancel and place the RiverSlot again.")
         river, workarea = river_pair()
         set_text(river, "guid", primary_guid)

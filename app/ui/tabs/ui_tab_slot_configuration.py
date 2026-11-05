@@ -33,6 +33,7 @@ from app.functions.function_island_slots import (
     remove_map_ids,
 )
 from app.functions.function_place_object import world_from_click
+from app.functions.function_custom_river_slots import load_custom_river_slots
 
 # Slot Map height overlay alpha (0 = transparent, 255 = fully opaque).
 SLOT_MAP_HEIGHTMAP_OPACITY = 205
@@ -100,6 +101,9 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_hover_item = None
         self.slot_map_info_var = tk.StringVar(value="Positions from mapname_original.xml are displayed using X and Z.")
         self.slot_map_selection_var = tk.StringVar(value="Hover or click a point to display ObjectId, GUID and Position.")
+        self.slot_map_river_type_var = tk.StringVar(value="Enbesa (original)")
+        self.slot_map_river_type_guids = {}
+        self.slot_map_river_type_values = []
         self.combined_slot_window = None
         self.combined_slot_records = []
         self.combined_slot_edit_rows = []
@@ -713,6 +717,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         if self.slot_map_window is not None and self.slot_map_window.winfo_exists():
             self.slot_map_window.deiconify(); PopupTemplate.safe_activate(self.slot_map_window)
             self._slot_map_rebuild_legend(); self._slot_map_schedule_redraw(); return
+        self._slot_map_prepare_river_types()
         built = MapViewTemplate.build_map_window(
             self, title="Slot Map", heading="Slot Map",
             slot_edit_help=True,
@@ -722,6 +727,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             redraw_command=self._slot_map_schedule_redraw,
             legend_builder=lambda: None,
             maximize_button_attribute="slot_map_maximize_button",
+            toolbar_builder=self._slot_map_build_river_type_toolbar,
         )
         self.slot_map_window = built["window"]
         self.slot_map_canvas = built["canvas"]
@@ -760,6 +766,43 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_selection_var.set(
             "Right click: open menu to add or remove slots | Middle drag: pan"
         )
+
+    def _slot_map_prepare_river_types(self):
+        """Build the ordered display choices and GUID pairs for River Slot placement."""
+        options = {
+            "Enbesa (original)": ("117741", "117742"),
+            "Integrated (global)": ("2144000100", "2144000101"),
+        }
+        try:
+            rows = load_custom_river_slots(self.CONFIG_FILE)
+        except (OSError, ValueError, UnicodeError) as exc:
+            rows = []
+            messagebox.showwarning(
+                "River Slot Type", f"Custom River Slots could not be loaded:\n{exc}",
+                parent=self,
+            )
+        for row in sorted(rows, key=lambda record: record["name"].casefold()):
+            label = row["name"]
+            if label.casefold() in {value.casefold() for value in options}:
+                label = f"{label} (Custom)"
+            options[label] = (row["river_slot_guid"], row["work_area_guid"])
+        self.slot_map_river_type_guids = options
+        self.slot_map_river_type_values = list(options)
+        if self.slot_map_river_type_var.get() not in options:
+            self.slot_map_river_type_var.set("Enbesa (original)")
+
+    def _slot_map_build_river_type_toolbar(self, toolbar):
+        """Place the River Slot Type selector below the Slot Map heading."""
+        toolbar.grid_columnconfigure(2, weight=1)
+        ctk.CTkLabel(toolbar, text="River Slot Type").grid(
+            row=0, column=0, padx=(0, 10), sticky="w",
+        )
+        ctk.CTkOptionMenu(
+            toolbar,
+            variable=self.slot_map_river_type_var,
+            values=self.slot_map_river_type_values,
+            width=220,
+        ).grid(row=0, column=1, sticky="w")
 
     def _slot_map_reload_rd3d(self):
         """Reload RD3D asynchronously and close status only in completion callback."""

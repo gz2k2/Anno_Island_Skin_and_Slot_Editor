@@ -145,7 +145,8 @@ class CancelledError(RuntimeError):
     pass
 
 
-from app.config.config_slot import configure_personal_river_guids
+from app.config.config_slot import configure_custom_river_guids, configure_personal_river_guids
+from app.functions.function_custom_river_slots import load_custom_river_slots
 
 class App(RegionDetectionMixin, UIMixin, ctk.CTk):
     # Constants required by the decoupled UI layer.
@@ -196,9 +197,6 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         self.backup_var = tk.BooleanVar(value=True)
         # Master switch for features and UI elements marked as experimental.
         self.experimental_var = tk.BooleanVar(value=False)
-        self.river_slot_mode_var = tk.StringVar(value="Integrated")
-        self.river_slot_guid_var = tk.StringVar(value="")
-        self.river_workarea_guid_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value="Ready")
         self.rd3d_save_info_var = tk.StringVar(value="")
         self.gamedata_file_var = tk.StringVar()
@@ -258,6 +256,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
         self._build_ui()
         self._load_config()
+        self._configure_selected_river_guids()
         self.after(100, self._poll)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(700, self._start_version_check)
@@ -3395,15 +3394,6 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             self.backup_var.set(config.getboolean("Options", "backup", fallback=True))
             self.experimental_var.set(
                 config.getboolean("Options", "experimental", fallback=False))
-            river_mode = config.get(
-                "Options", "river_slot_mode", fallback="Integrated").strip().title()
-            self.river_slot_mode_var.set(
-                river_mode if river_mode in {"Integrated", "Custom"} else "Integrated")
-            self.river_slot_guid_var.set(
-                config.get("Options", "river_slot_guid", fallback="").strip())
-            self.river_workarea_guid_var.set(
-                config.get("Options", "river_workarea_guid", fallback="").strip())
-            self._configure_selected_river_guids()
             self.tmc_parallel_var.set(str(config.getint("Options", "tmc_parallel_processes", fallback=4)))
         except (OSError, configparser.Error, ValueError) as exc:
             messagebox.showwarning("Configuration", f"config.ini could not be loaded:\n{exc}")
@@ -3430,9 +3420,6 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             "unpack_tmc": str(self.unpack_tmc_var.get()),
             "backup": str(self.backup_var.get()),
             "experimental": str(self.experimental_var.get()),
-            "river_slot_mode": self.river_slot_mode_var.get().strip() or "Integrated",
-            "river_slot_guid": self.river_slot_guid_var.get().strip(),
-            "river_workarea_guid": self.river_workarea_guid_var.get().strip(),
             "tmc_parallel_processes": self.tmc_parallel_var.get().strip() or "4",
         }
         try:
@@ -3444,12 +3431,17 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             return False
 
     def _configure_selected_river_guids(self):
-        if self.river_slot_mode_var.get() == "Custom":
-            primary = self.river_slot_guid_var.get().strip()
-            workarea = self.river_workarea_guid_var.get().strip()
-        else:
-            primary, workarea = "2144000100", "2144000101"
-        configure_personal_river_guids(primary, workarea)
+        """Register the global River Slot pair and saved named River Slots."""
+        configure_personal_river_guids("2144000100", "2144000101")
+        try:
+            custom_slots = load_custom_river_slots(CONFIG_FILE)
+        except (OSError, ValueError, UnicodeError) as exc:
+            custom_slots = []
+            messagebox.showwarning(
+                "River Slots", f"Custom River Slots could not be loaded:\n{exc}",
+                parent=self,
+            )
+        configure_custom_river_guids(custom_slots)
 
     def _experimental_enabled(self):
         """Return whether UI/features explicitly marked experimental are enabled."""

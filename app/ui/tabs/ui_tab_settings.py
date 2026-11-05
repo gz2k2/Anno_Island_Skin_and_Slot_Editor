@@ -194,52 +194,6 @@ class SettingsTabMixin:
             text_color="#ff6b6b", anchor="w", justify="left", wraplength=850,
         ).grid(row=2, column=0, padx=15, pady=(4, 15), sticky="ew")
 
-        ctk.CTkLabel(
-            expert_box, text="Riverslots",
-            font=ctk.CTkFont(size=18, weight="bold"),
-        ).grid(row=3, column=0, padx=15, pady=(15, 5), sticky="w")
-        river_frame = ctk.CTkFrame(expert_box)
-        river_frame.grid(row=4, column=0, padx=15, pady=(5, 5), sticky="ew")
-        river_frame.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(river_frame, text="Mode:").grid(
-            row=0, column=0, padx=(15, 10), pady=14, sticky="w")
-
-        custom_guid_frame = ctk.CTkFrame(river_frame, fg_color="transparent")
-        custom_guid_frame.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(custom_guid_frame, text="Slot GUID:").grid(
-            row=0, column=0, padx=(0, 10), pady=(7, 7), sticky="w")
-        ctk.CTkEntry(custom_guid_frame, textvariable=self.river_slot_guid_var).grid(
-            row=0, column=1, pady=(7, 7), sticky="ew")
-        ctk.CTkLabel(custom_guid_frame, text="Work Area GUID:").grid(
-            row=1, column=0, padx=(0, 10), pady=(7, 7), sticky="w")
-        ctk.CTkEntry(custom_guid_frame, textvariable=self.river_workarea_guid_var).grid(
-            row=1, column=1, pady=(7, 7), sticky="ew")
-
-        def update_river_mode(_value=None):
-            if self.river_slot_mode_var.get() == "Custom":
-                custom_guid_frame.grid(
-                    row=1, column=0, columnspan=2,
-                    padx=15, pady=(0, 7), sticky="ew")
-            else:
-                custom_guid_frame.grid_remove()
-
-        ctk.CTkOptionMenu(
-            river_frame,
-            variable=self.river_slot_mode_var,
-            values=["Integrated", "Custom"],
-            command=update_river_mode,
-        ).grid(row=0, column=1, padx=(0, 15), pady=14, sticky="ew")
-        update_river_mode()
-
-        ctk.CTkLabel(
-            expert_box,
-            text=(
-                "Integrated uses River Slot GUID 2144000100 and Work Area GUID "
-                "2144000101. Select Custom to configure your own GUID pair."
-            ),
-            text_color="gray70", anchor="w", justify="left", wraplength=850,
-        ).grid(row=5, column=0, padx=15, pady=(4, 15), sticky="ew")
-
         footer = ctk.CTkFrame(tab, fg_color="transparent")
         footer.grid(row=1, column=0, padx=20, pady=(10, 15), sticky="ew")
         footer.grid_columnconfigure(0, weight=1)
