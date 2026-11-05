@@ -66,9 +66,12 @@ class MiningSlotEditingMixin:
 
     # Multiplier applied only to the calculated absolute Y position of 100419.
     # 1.0 keeps the HeightMap result, 1.05 raises it by five percent, and 0.95
-    # lowers it by five percent. Normally leave this at 1.0 because an additive
-    # object offset is available through MINE_WORKAREAS_HEIGHT_OFFSET below.
+    # lowers it by five percent. Normally leave this at 1.0; the separate
+    # additive object offset is controlled by MINE_CAVE_HEIGHT_OFFSET.
     MINE_CAVE_HEIGHT_MULTIPLIER = 1.0
+    # Additive Y offset, in world-height units, for the inner Cave/Work Area
+    # object 100419. This can be tuned independently from outer Work Area 1000253.
+    MINE_CAVE_HEIGHT_OFFSET = 0.1
 
     # ---------------------------------------------------------------------
     # Generated Mining BezierPaths for 100419 and 1000253
@@ -116,11 +119,10 @@ class MiningSlotEditingMixin:
     # (selected GUID 1000029, 614 or 116037). It does not change path clearance.
     MINE_SLOT_HEIGHT_OFFSET = 0.1
 
-    # Shared additive Y offset, in world-height units, for both Work Area
-    # objects: outer Work Area 1000253 and inner Cave/Work Area 100419.
-    # It changes the object anchors, but MINE_PATH_HEIGHT_OFFSET independently
-    # controls the generated rail/path elevation.
-    MINE_WORKAREAS_HEIGHT_OFFSET = 0.4
+    # Additive Y offset, in world-height units, for outer Work Area 1000253.
+    # It does not change generated rail elevation, which is controlled by
+    # MINE_PATH_HEIGHT_OFFSET.
+    MINE_WORKAREA_HEIGHT_OFFSET = 0.4
 
     def _mine_path_surface_height(self, x, z, samples):
         """Return the highest bilinear HeightMap sample below the rail footprint."""
@@ -189,7 +191,7 @@ class MiningSlotEditingMixin:
         mine_position = (
             entrance[0], entrance[1] + self.MINE_SLOT_HEIGHT_OFFSET, entrance[2])
         workarea_position = (
-            mountain[0], mountain[1] + self.MINE_WORKAREAS_HEIGHT_OFFSET, mountain[2])
+            mountain[0], mountain[1] + self.MINE_WORKAREA_HEIGHT_OFFSET, mountain[2])
         for node, oid, guid, position in (
             (mine, mine_id, target_guid, mine_position),
             (workarea, work_id, MINE_WORKAREA_GUID, workarea_position),
@@ -237,7 +239,7 @@ class MiningSlotEditingMixin:
         midpoint_y *= self.MINE_CAVE_HEIGHT_MULTIPLIER
         cave_midpoint = (
             midpoint_x,
-            midpoint_y + self.MINE_WORKAREAS_HEIGHT_OFFSET,
+            midpoint_y + self.MINE_CAVE_HEIGHT_OFFSET,
             midpoint_z,
         )
         set_text(cave, "ID", cave_id)
