@@ -15,7 +15,7 @@ class MapExportCancelled(RuntimeError):
 def excluded_name(name):
     """Keep *.xml.lnk; exclude actual XML, originals and backup artifacts."""
     name = name.casefold()
-    return (name.endswith(('.xml', '.data')) or '_original' in name or '_backup' in name
+    return (name.endswith(('.xml', '.data', '.json')) or '_original' in name or '_backup' in name
             or name in {'backup', 'backups', '.backup', '.backups'}
             or bool(re.search(r'\.(?:bak|backup|old)(?:\.|$)', name))
             or name.endswith('~'))
