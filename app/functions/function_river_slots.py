@@ -170,8 +170,8 @@ class RiverSlotEditingMixin:
                 gp if gp.is_file() else go)[0]
             self._island_slot_ram_map_tree = self._slot_parse_xml(
                 mp if mp.is_file() else mo)[0]
-        game_tree = deepcopy(self._island_slot_ram_game_tree)
-        map_tree = deepcopy(self._island_slot_ram_map_tree)
+        game_tree = self._island_slot_ram_game_tree
+        map_tree = self._island_slot_ram_map_tree
         game_root, map_root = game_tree.getroot(), map_tree.getroot()
         container = game_object_container(game_root)
         primary_guid = str(placement.get("primary_guid", "")).strip()
@@ -185,9 +185,8 @@ class RiverSlotEditingMixin:
         set_text(river, "guid", primary_guid)
         set_text(workarea, "guid", workarea_guid)
         used = all_ids(map_root, game_root)
-        river_id, work_id = allocate_verified_id_family(
-            map_root, game_root, used, 2)
-        folder = new_folder_id(object_records(game_root))
+        river_id, work_id = allocate_id_family_from_used(used, 2)
+        folder = new_folder_id_from_tree(game_root)
 
         # Raise the complete River family as one vertical unit. Keeping one
         # shared offset prevents anchors, MapName and Bezier geometry drifting.
@@ -263,31 +262,40 @@ class RiverSlotEditingMixin:
         direct(path, "Minimum").text = format_position(origin)
         direct(path, "Maximum").text = format_position(endpoint)
 
-        append_pretty(container, river)
-        append_pretty(container, workarea)
-        append_map_entry(map_root, "4", river_id, primary_guid, format_position(entrance))
-        append_map_entry(map_root, "3", work_id, workarea_guid, format_position(work_position))
-        containers = mine_object_group_containers(game_root)
-        used_group_names = {
-            (child.text or "").strip()
-            for groups in containers for child in groups
-            if direct(child, "GameObjects") is None and (child.text or "").strip()
-        }
-        group_name = "New Group"
-        number = 1
-        while group_name in used_group_names:
-            group_name = f"New Group {number}"
-            number += 1
-        for groups in containers:
-            name_node = ET.Element("None")
-            name_node.text = group_name
-            append_pretty(groups, name_node)
-            group = ET.Element("None")
-            members = ET.SubElement(group, "GameObjects")
-            for oid in (river_id, work_id):
-                ET.SubElement(members, "None").text = oid
-            append_pretty(groups, group)
-        validate_pair(map_root, game_root)
+        transaction = XMLAppendTransaction()
+        try:
+            transaction.append(container, river)
+            transaction.append(container, workarea)
+            append_map_entry(
+                map_root, "4", river_id, primary_guid,
+                format_position(entrance), transaction=transaction)
+            append_map_entry(
+                map_root, "3", work_id, workarea_guid,
+                format_position(work_position), transaction=transaction)
+            containers = mine_object_group_containers(game_root)
+            used_group_names = {
+                (child.text or "").strip()
+                for groups in containers for child in groups
+                if direct(child, "GameObjects") is None and (child.text or "").strip()
+            }
+            group_name = "New Group"
+            number = 1
+            while group_name in used_group_names:
+                group_name = f"New Group {number}"
+                number += 1
+            for groups in containers:
+                name_node = ET.Element("None")
+                name_node.text = group_name
+                transaction.append(groups, name_node)
+                group = ET.Element("None")
+                members = ET.SubElement(group, "GameObjects")
+                for oid in (river_id, work_id):
+                    ET.SubElement(members, "None").text = oid
+                transaction.append(groups, group)
+            validate_pair(map_root, game_root)
+        except Exception:
+            transaction.rollback()
+            raise
         self._island_slot_ram_game_tree = game_tree
         self._island_slot_ram_map_tree = map_tree
         StatusWindowTemplate.update(status, fraction=1)

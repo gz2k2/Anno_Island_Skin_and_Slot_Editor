@@ -458,6 +458,9 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         river_pairs = []
         paired_ids = set()
         game_records = list(game_entries.values())
+        records_by_guid = {}
+        for record in game_records:
+            records_by_guid.setdefault(record["guid"], []).append(record)
 
         # Cache the authoritative terrain grid from Gamedata. Values are UInt16
         # on disk, interpreted as signed Int16 and scaled by 1/128 world units.
@@ -550,14 +553,15 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_mine_curves = mine_curves
 
         for family_name, family in RIVER_GUID_FAMILIES.items():
-            primaries = [r for r in game_records if r["guid"] == family["primary"]]
-            workareas = [r for r in game_records if r["guid"] == family["workarea"]]
+            primaries = records_by_guid.get(family["primary"], [])
+            workareas = records_by_guid.get(family["workarea"], [])
+            workareas_by_folder = {}
+            for work in workareas:
+                if work["folder"]:
+                    workareas_by_folder.setdefault(work["folder"], []).append(work)
             if family.get("folder_pairing"):
                 for primary in primaries:
-                    matches = [
-                        work for work in workareas
-                        if primary["folder"] and work["folder"] == primary["folder"]
-                    ]
+                    matches = workareas_by_folder.get(primary["folder"], [])
                     if len(matches) == 1:
                         pair = (primary["id"], matches[0]["id"], family_name)
                         if pair[0] in map_entries and pair[1] in map_entries:
@@ -569,9 +573,8 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                 # only when exactly one unmatched primary/work-area remains.
                 for primary in primaries:
                     matches = [
-                        work for work in workareas
-                        if primary["folder"] and work["folder"] == primary["folder"]
-                        and work["id"] not in paired_ids
+                        work for work in workareas_by_folder.get(primary["folder"], [])
+                        if work["id"] not in paired_ids
                     ]
                     if len(matches) == 1 and primary["id"] not in paired_ids:
                         pair = (primary["id"], matches[0]["id"], family_name)

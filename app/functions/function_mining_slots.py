@@ -171,9 +171,9 @@ class MiningSlotEditingMixin:
         if self._island_slot_ram_game_tree is None or self._island_slot_ram_map_tree is None:
             self._island_slot_ram_game_tree = self._slot_parse_xml(gp if gp.is_file() else go)[0]
             self._island_slot_ram_map_tree = self._slot_parse_xml(mp if mp.is_file() else mo)[0]
-        game_tree, map_tree = deepcopy(self._island_slot_ram_game_tree), deepcopy(self._island_slot_ram_map_tree)
+        game_tree, map_tree = self._island_slot_ram_game_tree, self._island_slot_ram_map_tree
         game_root, map_root = game_tree.getroot(), map_tree.getroot()
-        records = object_records(game_root); container = game_object_container(game_root)
+        container = game_object_container(game_root)
         target_guid = str(placement["guid"])
         if target_guid not in MINE_SLOT_GUIDS:
             raise ValueError(f"Unsupported MineSlot GUID: {target_guid}")
@@ -193,8 +193,7 @@ class MiningSlotEditingMixin:
             raise ValueError("MineSlot Cave template GUID is not 100419.")
         used = all_ids(map_root, game_root)
         # Work Area, Mine and Cave are one native logical family.
-        mine_id, work_id, cave_id = allocate_verified_id_family(
-            map_root, game_root, used, 3)
+        mine_id, work_id, cave_id = allocate_id_family_from_used(used, 3)
         # Generated Mine, Work Area and Cave objects use the neutral runtime folder,
         # matching Island Editor's proven Gamedata integration.
         folder = "0"
@@ -539,12 +538,26 @@ class MiningSlotEditingMixin:
             raise ValueError(
                 "100419 and 1000253 do not share the MineSlot connector.")
         StatusWindowTemplate.update(status,fraction=.7)
-        append_pretty(container,mine); append_pretty(container,workarea); append_pretty(container,cave)
-        append_map_entry(map_root,MINE_PRIMARY_GROUP,mine_id,target_guid,format_position(mine_position))
-        append_map_entry(map_root,MINE_WORKAREA_GROUP,work_id,MINE_WORKAREA_GUID,format_position(workarea_position))
-        append_map_entry(map_root,MINE_CAVE_GROUP,cave_id,MINE_CAVE_GUID,text(cave, "Position"))
-        group_name = append_mine_object_group(game_root, work_id, mine_id, cave_id)
-        validate_pair(map_root,game_root)
+        transaction = XMLAppendTransaction()
+        try:
+            transaction.append(container, mine)
+            transaction.append(container, workarea)
+            transaction.append(container, cave)
+            append_map_entry(
+                map_root, MINE_PRIMARY_GROUP, mine_id, target_guid,
+                format_position(mine_position), transaction=transaction)
+            append_map_entry(
+                map_root, MINE_WORKAREA_GROUP, work_id, MINE_WORKAREA_GUID,
+                format_position(workarea_position), transaction=transaction)
+            append_map_entry(
+                map_root, MINE_CAVE_GROUP, cave_id, MINE_CAVE_GUID,
+                text(cave, "Position"), transaction=transaction)
+            group_name = append_mine_object_group(
+                game_root, work_id, mine_id, cave_id, transaction=transaction)
+            validate_pair(map_root, game_root)
+        except Exception:
+            transaction.rollback()
+            raise
         self._island_slot_ram_game_tree,self._island_slot_ram_map_tree=game_tree,map_tree
         StatusWindowTemplate.update(status,fraction=1)
         self.status_var.set(f"Added {placement['name']} from master {MINE_MASTER_GUID} as GUID {target_guid} with Work Area | IDs: {mine_id}, {work_id} | Folder: {folder}")

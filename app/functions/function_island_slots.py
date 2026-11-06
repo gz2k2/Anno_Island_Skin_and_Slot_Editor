@@ -170,9 +170,16 @@ def object_container(root):
 
 
 def all_ids(map_root, game_root):
-    used = {record["id"] for record in object_records(game_root)}
-    used.update((node.text or "").strip() for node in map_root.iter()
-                if tag(node) == "ObjectId" and (node.text or "").strip())
+    used = {
+        (node.text or "").strip()
+        for node in map_root.iter()
+        if tag(node) == "ObjectId" and (node.text or "").strip()
+    }
+    for parent in game_root.iter():
+        for node in parent:
+            object_id = text(node, "ID")
+            if object_id and text(node, "guid") and text(node, "Position"):
+                used.add(object_id)
     return used
 
 
@@ -229,25 +236,90 @@ def allocate_verified_id_family(map_root, game_root, used, size):
     raise RuntimeError("Could not allocate a verified consecutive ObjectId family.")
 
 
+def allocate_id_family_from_used(used, size):
+    """Allocate a consecutive negative ObjectId family from a complete ID set."""
+    size = int(size)
+    if size < 1 or size > 100:
+        raise ValueError("ObjectId family size must be between 1 and 100.")
+    maximum_anchor = ((1 << 63) - 1) // 100
+    for _ in range(10000):
+        anchor = -(secrets.randbelow(maximum_anchor - 1) + 1) * 100
+        family = tuple(str(anchor + offset) for offset in range(size))
+        if all(candidate not in used for candidate in family):
+            used.update(family)
+            return family
+    raise RuntimeError("Could not allocate a verified consecutive signed 64-bit ObjectId family.")
+
+
 def new_folder_id(records):
     values = [int(record["folder"]) for record in records if record["folder"].lstrip("-").isdigit()]
     return str(max(values, default=0) + 1)
 
 
-def slot_objects(root, create=False):
+def new_folder_id_from_tree(root):
+    maximum = 0
+    for parent in root.iter():
+        for node in parent:
+            if not (text(node, "ID") and text(node, "guid")):
+                continue
+            try:
+                parse_position(text(node, "Position"))
+            except ValueError:
+                continue
+            folder = text(node, "ObjectFolderID")
+            if folder.lstrip("-").isdigit():
+                maximum = max(maximum, int(folder))
+    return str(maximum + 1)
+
+
+class XMLAppendTransaction:
+    """Track appended XML nodes so a failed staged validation can be rolled back."""
+
+    def __init__(self):
+        self._parents = {}
+
+    def _remember(self, parent):
+        key = id(parent)
+        if key not in self._parents:
+            last_child = parent[-1] if len(parent) else None
+            self._parents[key] = (
+                parent, parent.text, last_child,
+                last_child.tail if last_child is not None else None, [],
+            )
+        return self._parents[key]
+
+    def append(self, parent, node):
+        self._remember(parent)[4].append(node)
+        append_pretty(parent, node)
+
+    def insert(self, parent, index, node):
+        self._remember(parent)[4].append(node)
+        insert_pretty(parent, index, node)
+
+    def rollback(self):
+        for parent, original_text, last_child, original_tail, added in reversed(
+                tuple(self._parents.values())):
+            for node in reversed(added):
+                parent.remove(node)
+            parent.text = original_text
+            if last_child is not None:
+                last_child.tail = original_tail
+
+
+def slot_objects(root, create=False, transaction=None):
     result = next((node for node in root.iter() if tag(node) == "SlotObjects"), None)
     if result is None and create:
         metadata = next((node for node in root.iter() if tag(node) == "ObjectMetaInfo"), None)
         if metadata is None:
             metadata = ET.Element("ObjectMetaInfo")
-            append_pretty(root, metadata)
+            (transaction.append if transaction else append_pretty)(root, metadata)
         result = ET.Element("SlotObjects")
-        append_pretty(metadata, result)
+        (transaction.append if transaction else append_pretty)(metadata, result)
     return result
 
 
-def map_group_container(root, group_id, create=False):
-    slots = slot_objects(root, create=create)
+def map_group_container(root, group_id, create=False, transaction=None):
+    slots = slot_objects(root, create=create, transaction=transaction)
     if slots is None:
         raise ValueError("MapName XML has no <SlotObjects> container.")
     children = list(slots)
@@ -258,16 +330,17 @@ def map_group_container(root, group_id, create=False):
                 return children[index + 1]
             if create:
                 container = ET.Element("None")
-                insert_pretty(slots, index + 1, container)
+                (transaction.insert if transaction else insert_pretty)(
+                    slots, index + 1, container)
                 return container
     if not create:
         raise ValueError(f"MapName SlotObjects group {group_id} was not found.")
     header = ET.Element("None")
     value = ET.SubElement(header, "value")
     ET.SubElement(value, "id").text = str(group_id)
-    append_pretty(slots, header)
+    (transaction.append if transaction else append_pretty)(slots, header)
     container = ET.Element("None")
-    append_pretty(slots, container)
+    (transaction.append if transaction else append_pretty)(slots, container)
     return container
 
 
@@ -345,13 +418,15 @@ def insert_pretty(parent, index, node):
     return node
 
 
-def append_map_entry(root, group_id, object_id, guid, pos):
-    container = map_group_container(root, group_id, create=True)
+def append_map_entry(root, group_id, object_id, guid, pos, transaction=None):
+    container = map_group_container(
+        root, group_id, create=True, transaction=transaction)
     item = ET.Element("None")
     ET.SubElement(item, "ObjectId").text = object_id
     ET.SubElement(item, "ObjectGuid").text = guid
     ET.SubElement(item, "Position").text = pos
-    append_pretty(container, item)
+    (transaction.append if transaction else append_pretty)(container, item)
+    return item
 
 
 def remove_map_ids(root, ids):
@@ -535,7 +610,7 @@ def next_mining_group_name(containers):
     return f"Miningslot{number}"
 
 
-def append_mine_object_group(game_root, work_id, mine_id, cave_id):
+def append_mine_object_group(game_root, work_id, mine_id, cave_id, transaction=None):
     """Append an identical native mine group to every parallel container."""
     containers = mine_object_group_containers(game_root)
     group_name = next_mining_group_name(containers)
@@ -543,12 +618,12 @@ def append_mine_object_group(game_root, work_id, mine_id, cave_id):
     for groups in containers:
         name = ET.Element("None")
         name.text = group_name
-        append_pretty(groups, name)
+        (transaction.append if transaction else append_pretty)(groups, name)
         group = ET.Element("None")
         members = ET.SubElement(group, "GameObjects")
         for object_id in member_ids:
             ET.SubElement(members, "None").text = object_id
-        append_pretty(groups, group)
+        (transaction.append if transaction else append_pretty)(groups, group)
     # Verify all parallel copies immediately, before the staged XML is committed.
     copies = []
     for groups in containers:
@@ -1619,7 +1694,7 @@ class IslandSlotBaseMixin:
             strict_deposit_ids=self._island_slot_generated_deposit_ids,
         )
         if not report.errors:
-            return set()
+            return set(), report
 
         owner = self.slot_map_window if getattr(self, "slot_map_window", None) is not None else self
         window = tk.Toplevel(owner)
@@ -1803,17 +1878,19 @@ class IslandSlotBaseMixin:
         refresh()
         PopupTemplate.schedule(window, 30, lambda: PopupTemplate.safe_activate(window))
         owner.wait_window(window)
-        return result["accepted"]
+        accepted = result["accepted"]
+        return (accepted, None) if accepted is not None else (None, None)
 
     def _island_slot_atomic_write(self, game_tree, map_tree, game_target, map_target):
         """Validate Slot trees, then save only slot scopes to patch JSON files."""
-        accepted = self._slot_review_save_stoppers(map_tree, game_tree)
+        accepted, initial_report = self._slot_review_save_stoppers(map_tree, game_tree)
         if accepted is None:
             raise SlotSaveCancelled()
-        initial_report = validate_slot_trees(
-            map_tree.getroot(), game_tree.getroot(),
-            strict_deposit_ids=self._island_slot_generated_deposit_ids,
-        )
+        if initial_report is None:
+            initial_report = validate_slot_trees(
+                map_tree.getroot(), game_tree.getroot(),
+                strict_deposit_ids=self._island_slot_generated_deposit_ids,
+            )
         unresolved = [error for error in initial_report.errors if error not in accepted]
         if unresolved:
             raise ValueError("Slot validation failed:\n- " + "\n- ".join(unresolved))
@@ -1828,18 +1905,16 @@ class IslandSlotBaseMixin:
         game_payload = build_gamedata_slot_patch(non_slot_game_tree, game_tree)
         map_payload = build_a7minfo_slot_patch(map_tree)
 
-        PATCH_STORE.save_scope(
+        check_game = PATCH_STORE.save_scope(
             "gamedata", game_original, "gamedata_slots", game_payload)
         try:
-            PATCH_STORE.save_scope(
+            check_map = PATCH_STORE.save_scope(
                 "a7minfo", map_original, "a7minfo_slots", map_payload)
         except Exception:
             # Keep both files consistent if A7MInfo patch generation fails.
             PATCH_STORE.reset_scope("gamedata", game_original, "gamedata_slots")
             raise
 
-        check_game = PATCH_STORE.view("gamedata", game_original)
-        check_map = PATCH_STORE.view("a7minfo", map_original)
         written_report = validate_slot_trees(
             check_map.getroot(), check_game.getroot(),
             strict_deposit_ids=self._island_slot_generated_deposit_ids,

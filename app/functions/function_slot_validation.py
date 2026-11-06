@@ -59,8 +59,14 @@ def close_position(a, b, tolerance=0.05):
 
 def game_records(root):
     records = {}
+    container_owners = {}
+    for candidate in root.iter():
+        for child in candidate:
+            if local_tag(child) == "objects":
+                container_owners.setdefault(child, candidate)
+
     for parent in root.iter():
-        for node in list(parent):
+        for node in parent:
             object_id = direct_text(node, "ID")
             guid = direct_text(node, "guid")
             position = direct_text(node, "Position")
@@ -68,12 +74,7 @@ def game_records(root):
                 continue
             if object_id in records:
                 raise ValueError(f"Duplicate Gamedata ID {object_id}.")
-            owner = None
-            if local_tag(parent) == "objects":
-                owner = next(
-                    (candidate for candidate in root.iter() if parent in list(candidate)),
-                    None,
-                )
+            owner = container_owners.get(parent) if local_tag(parent) == "objects" else None
             records[object_id] = {
                 "id": object_id,
                 "guid": guid,
@@ -154,20 +155,27 @@ def resolve_river_pairs(game, map_data, report=None):
     """Resolve usable River pairs without validating or reporting River findings."""
     pairs = []
     used = set()
+    records_by_guid = {}
+    for record in game.values():
+        records_by_guid.setdefault(record["guid"], []).append(record)
+
     for family_name, family in RIVER_GUID_FAMILIES.items():
-        primaries = [record for record in game.values() if record["guid"] == family["primary"]]
-        workareas = [record for record in game.values() if record["guid"] == family["workarea"]]
+        primaries = records_by_guid.get(family["primary"], [])
+        workareas = records_by_guid.get(family["workarea"], [])
+        workareas_by_folder = {}
+        for work in workareas:
+            if work["folder"]:
+                workareas_by_folder.setdefault(work["folder"], []).append(work)
         for primary in primaries:
             if family.get("folder_pairing") and primary["folder"]:
                 matches = [
-                    work for work in workareas
-                    if work["folder"] == primary["folder"] and work["id"] not in used
+                    work for work in workareas_by_folder.get(primary["folder"], [])
+                    if work["id"] not in used
                 ]
             else:
                 folder_matches = [
-                    work for work in workareas
-                    if primary["folder"] and work["folder"] == primary["folder"]
-                    and work["id"] not in used
+                    work for work in workareas_by_folder.get(primary["folder"], [])
+                    if work["id"] not in used
                 ]
                 matches = folder_matches if len(folder_matches) == 1 else [
                     work for work in workareas
