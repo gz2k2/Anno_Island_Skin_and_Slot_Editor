@@ -307,7 +307,7 @@
 </>
 <Material><ID>10</>
 <Type>0</>
-<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_grass_08_green.xml</>
+<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_grass_08.xml</>
 <Repetition>4.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
@@ -344,7 +344,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_jungle_01.prp</>
+<ObjectFileName>data\dlc06\graphics\props\terrain_props\vegetation\grass\flowers_savanna_01.prp</>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -355,7 +355,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_jungle_02.prp</>
+<ObjectFileName>data\dlc06\graphics\props\terrain_props\vegetation\grass\flowers_savanna_02.prp</>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -366,7 +366,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_jungle_03.prp</>
+<ObjectFileName>data\dlc06\graphics\props\terrain_props\vegetation\grass\flowers_savanna_03.prp</>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -377,7 +377,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_jungle_04.prp</>
+<ObjectFileName>data\dlc06\graphics\props\terrain_props\vegetation\grass\flowers_savanna_01.prp</>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>

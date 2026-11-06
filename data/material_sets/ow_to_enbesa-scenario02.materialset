@@ -333,7 +333,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\grass_moderate_02.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -344,7 +344,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\grass_moderate_01.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -355,7 +355,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\grass_moderate_04.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -377,7 +377,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_moderate_01.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -388,7 +388,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_moderate_02.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -399,7 +399,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_moderate_03.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -410,7 +410,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_moderate_04.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -421,7 +421,7 @@
 <Repetition>1.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\flowers_moderate_05.prp</>
+<ObjectFileName></>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>

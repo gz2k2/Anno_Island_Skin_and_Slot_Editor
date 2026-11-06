@@ -241,7 +241,7 @@
 </>
 <Material><ID>21</>
 <Type>0</>
-<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_grass_08_green.xml</>
+<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_grass_08.xml</>
 <Repetition>4.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
