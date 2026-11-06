@@ -5,6 +5,46 @@ from app.functions.function_island_slots import *  # noqa: F401,F403
 
 class MiningSlotEditingMixin:
     # ---------------------------------------------------------------------
+    # Vertical placement tuning
+    # ---------------------------------------------------------------------
+    # Additive Y offset, in world-height units, for the actual MineSlot object
+    # (selected GUID 1000029, 614 or 116037). It does not change path clearance.
+    MINE_SLOT_HEIGHT_OFFSET = 0.1
+
+    # Additive Y offset, in world-height units, for outer Work Area 1000253.
+    # It does not change generated rail elevation, which is controlled by
+    # MINE_PATH_HEIGHT_OFFSET.
+    MINE_WORKAREA_HEIGHT_OFFSET = 0.4
+
+    # Multiplier applied only to the calculated absolute Y position of 100419.
+    # 1.0 keeps the HeightMap result, 1.05 raises it by five percent, and 0.95
+    # lowers it by five percent. Normally leave this at 1.0; the separate
+    # additive object offset is controlled by MINE_CAVE_HEIGHT_OFFSET.
+    MINE_CAVE_HEIGHT_MULTIPLIER = 1.0
+    # Additive Y offset, in world-height units, for the inner Cave/Work Area
+    # object 100419. This can be tuned independently from outer Work Area 1000253.
+    MINE_CAVE_HEIGHT_OFFSET = 0.1
+
+    # Mandatory vertical clearance, in world-height units, between the highest
+    # sampled HeightMap surface and the generated rail/path centerline. This is
+    # the technical safety distance that prevents rails from entering rock.
+    MINE_PATH_CLEARANCE = 0.40
+
+    # Additional user-tuning offset, in world-height units, for both generated
+    # Mining BezierPaths. Positive values raise all path points; negative values
+    # lower them. This is added after HeightMap sampling and PATH_CLEARANCE.
+    MINE_PATH_HEIGHT_OFFSET = 0.2
+
+    # Additional lift for generated Mine Bezier control points. The control
+    # point directly at the 1000253 side stays at its existing terrain height;
+    # all following points are raised by this amount. Keep this separate from
+    # MINE_PATH_HEIGHT_OFFSET so the existing endpoint tuning is preserved.
+    MINE_PATH_EXTRA_LIFT = 0.3
+
+    # Terrain-height variation that triggers additional Bezier path samples.
+    MINE_PATH_ROUGHNESS_HEIGHT = 0.75
+
+    # ---------------------------------------------------------------------
     # Selectable MineSlot variants
     # ---------------------------------------------------------------------
     # Tuple entries are: (label shown in the UI, GUID written to Gamedata).
@@ -19,7 +59,7 @@ class MiningSlotEditingMixin:
     # Allowed horizontal distance, in world units, between the first click
     # (MineSlot) and the second click (outer Work Area 1000253). Placements
     # outside this range are rejected before any XML objects are generated.
-    MINE_MIN_DISTANCE = 2.0
+    MINE_MIN_DISTANCE = 7.0
     MINE_MAX_DISTANCE = 20.0
 
     # MineSlot assets use a raster-aligned facing in the native data. Snap only
@@ -32,7 +72,7 @@ class MiningSlotEditingMixin:
     # direct Work Area -> MineSlot axis. Terrain curvature must not rotate it.
     MINE_WORKAREA_PATH_DIRECTION_OFFSET_DEGREES = 0.0
     # Radius of the MineSlot placement helper circle in world-coordinate units.
-    MINE_PLACEMENT_CIRCLE_RADIUS = 2.5
+    MINE_PLACEMENT_CIRCLE_RADIUS = 3
 
     # Native 1000253 paths do not run from object-center to object-center.
     # The Work Area end starts ~0.6158 world units behind its object anchor,
@@ -64,34 +104,9 @@ class MiningSlotEditingMixin:
     # HeightMap; the candidate on the higher valid rock surface is selected.
     MINE_CAVE_LATERAL_OFFSET = 1.15
 
-    # Multiplier applied only to the calculated absolute Y position of 100419.
-    # 1.0 keeps the HeightMap result, 1.05 raises it by five percent, and 0.95
-    # lowers it by five percent. Normally leave this at 1.0; the separate
-    # additive object offset is controlled by MINE_CAVE_HEIGHT_OFFSET.
-    MINE_CAVE_HEIGHT_MULTIPLIER = 1.0
-    # Additive Y offset, in world-height units, for the inner Cave/Work Area
-    # object 100419. This can be tuned independently from outer Work Area 1000253.
-    MINE_CAVE_HEIGHT_OFFSET = 0.1
-
     # ---------------------------------------------------------------------
     # Generated Mining BezierPaths for 100419 and 1000253
     # ---------------------------------------------------------------------
-    # Mandatory vertical clearance, in world-height units, between the highest
-    # sampled HeightMap surface and the generated rail/path centerline. This is
-    # the technical safety distance that prevents rails from entering rock.
-    MINE_PATH_CLEARANCE = 0.40
-
-    # Additional user-tuning offset, in world-height units, for both generated
-    # Mining BezierPaths. Positive values raise all path points; negative values
-    # lower them. This is added after HeightMap sampling and PATH_CLEARANCE.
-    MINE_PATH_HEIGHT_OFFSET = 0.2
-
-    # Additional lift for generated Mine Bezier control points. The control
-    # point directly at the 1000253 side stays at its existing terrain height;
-    # all following points are raised by this amount. Keep this separate from
-    # MINE_PATH_HEIGHT_OFFSET so the existing endpoint tuning is preserved.
-    MINE_PATH_EXTRA_LIFT = 0.3
-
     # Radius, in horizontal world units, around every Bezier point used for its
     # HeightMap footprint check. The center, four cardinal directions and four
     # diagonals are sampled; the highest result is used. A larger value protects
@@ -101,7 +116,6 @@ class MiningSlotEditingMixin:
     # Adaptive Bezier density calibrated against 185 native mine packages.
     # Distance supplies the base density; terrain variation adds detail.
     MINE_PATH_DISTANCE_STEP = 1.75
-    MINE_PATH_ROUGHNESS_HEIGHT = 0.75
     MINE_CAVE_PATH_MIN_POINTS = 2
     MINE_CAVE_PATH_MAX_POINTS = 8
     MINE_WORKAREA_PATH_MIN_POINTS = 5
@@ -109,20 +123,16 @@ class MiningSlotEditingMixin:
     MINE_PATH_PROFILE_SAMPLES = 33
     # Restrained native-style outer path geometry.
     MINE_WORKAREA_PATH_POINTS = 9
+    # Blend the first/last two inner 1000253 path points toward a straight line.
+    # 0 disables smoothing; 1 fully straightens the adjacent point and half
+    # that amount is applied to the second point from each end.
+    MINE_WORKAREA_PATH_END_SMOOTHING = 0.4
+    # Maximum horizontal sideways deviation inherited from the template curve,
+    # in world units. The generated path clamps this to +/- the configured value.
     MINE_PATH_MAX_LATERAL_OFFSET = 0.35
+    # Maximum Bezier control-handle length, in world units. Shorter neighboring
+    # point distances can reduce the actual handle length further.
     MINE_PATH_MAX_HANDLE_LENGTH = 0.90
-
-    # ---------------------------------------------------------------------
-    # Generated object positions (not BezierPath points)
-    # ---------------------------------------------------------------------
-    # Additive Y offset, in world-height units, for the actual MineSlot object
-    # (selected GUID 1000029, 614 or 116037). It does not change path clearance.
-    MINE_SLOT_HEIGHT_OFFSET = 0.1
-
-    # Additive Y offset, in world-height units, for outer Work Area 1000253.
-    # It does not change generated rail elevation, which is controlled by
-    # MINE_PATH_HEIGHT_OFFSET.
-    MINE_WORKAREA_HEIGHT_OFFSET = 0.4
 
     def _mine_path_surface_height(self, x, z, samples):
         """Return the highest bilinear HeightMap sample below the rail footprint."""
@@ -321,11 +331,13 @@ class MiningSlotEditingMixin:
         axis_to_mine_length = math.hypot(axis_to_mine_x, axis_to_mine_z)
         if axis_to_mine_length <= 0.000001:
             raise ValueError("Mine Work Area BezierPath has zero length.")
-        axis_unit_x = axis_to_mine_x / axis_to_mine_length
-        axis_unit_z = axis_to_mine_z / axis_to_mine_length
+        # Match the snapped Work Area facing so the connector enters its center
+        # even when the raw click vector differs slightly from the object axis.
+        workarea_axis_x = -math.sin(mine_direction)
+        workarea_axis_z = -math.cos(mine_direction)
         path_start = (
-            mountain[0] - axis_unit_x * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
-            mountain[2] - axis_unit_z * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
+            mountain[0] - workarea_axis_x * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
+            mountain[2] - workarea_axis_z * self.MINE_PATH_WORKAREA_ANCHOR_OFFSET,
         )
         # Select the cardinal direction which points from MineSlot toward the
         # Work Area. This reproduces the native 0.5-unit connector offset even
@@ -405,6 +417,23 @@ class MiningSlotEditingMixin:
             points[0] = (target_start[0], start_surface + self.MINE_PATH_CLEARANCE
                          + self.MINE_PATH_HEIGHT_OFFSET, target_start[1])
             points[-1] = (target_end[0], mine_position[1], target_end[1])
+            if is_workarea and len(points) >= 5:
+                smoothing = max(
+                    0.0, min(1.0, float(self.MINE_WORKAREA_PATH_END_SMOOTHING)))
+                for index in range(1, len(points) - 1):
+                    edge_distance = min(index, len(points) - 1 - index)
+                    if edge_distance > 2:
+                        continue
+                    blend = smoothing * (1.0 if edge_distance == 1 else 0.5)
+                    progress = index / (len(points) - 1)
+                    straight_point = tuple(
+                        points[0][axis] * (1.0 - progress)
+                        + points[-1][axis] * progress
+                        for axis in range(3))
+                    points[index] = tuple(
+                        points[index][axis] * (1.0 - blend)
+                        + straight_point[axis] * blend
+                        for axis in range(3))
 
             items = []
             handle_cap = max(0.05, float(self.MINE_PATH_MAX_HANDLE_LENGTH))

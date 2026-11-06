@@ -63,6 +63,7 @@ class FinalizeTabMixin:
         ctk.CTkCheckBox(
             option_left, text="Back up existing binary files",
             variable=self.finalize_backup_var,
+            command=self._save_config,
         ).pack(anchor="w")
 
         export_row = ctk.CTkFrame(option_left, fg_color="transparent")

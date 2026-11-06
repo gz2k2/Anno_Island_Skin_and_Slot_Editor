@@ -966,6 +966,15 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         for index, guid in enumerate(sorted(counts, key=lambda v: (len(v), v))):
             visible = self.slot_map_guid_visible.get(guid, True); color = self.slot_map_guid_colors[guid]
             label = GUID_LABELS.get(guid)
+            if label is None:
+                river_role = RIVER_GUID_ROLE.get(guid)
+                if river_role is not None:
+                    family_name, role = river_role
+                    family = RIVER_GUID_FAMILIES.get(family_name, {})
+                    custom_name = family.get("name")
+                    if custom_name:
+                        role_label = "Riverslot" if role == "primary" else "Riverslot Work Area"
+                        label = f"{role_label} ({custom_name})"
             button_text = (
                 f"{label}\n{guid} ({counts[guid]})"
                 if label else f"{guid} ({counts[guid]})"

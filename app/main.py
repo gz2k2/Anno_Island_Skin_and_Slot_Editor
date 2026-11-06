@@ -3392,6 +3392,8 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             self.unpack_rd3d_var.set(config.getboolean("Options", "unpack_rd3d", fallback=True))
             self.unpack_tmc_var.set(config.getboolean("Options", "unpack_tmc", fallback=True))
             self.backup_var.set(config.getboolean("Options", "backup", fallback=True))
+            self.finalize_backup_var.set(config.getboolean(
+                "Options", "finalize_backup", fallback=self.backup_var.get()))
             self.experimental_var.set(
                 config.getboolean("Options", "experimental", fallback=False))
             self.tmc_parallel_var.set(str(config.getint("Options", "tmc_parallel_processes", fallback=4)))
@@ -3419,6 +3421,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             "unpack_rd3d": str(self.unpack_rd3d_var.get()),
             "unpack_tmc": str(self.unpack_tmc_var.get()),
             "backup": str(self.backup_var.get()),
+            "finalize_backup": str(self.finalize_backup_var.get()),
             "experimental": str(self.experimental_var.get()),
             "tmc_parallel_processes": self.tmc_parallel_var.get().strip() or "4",
         }

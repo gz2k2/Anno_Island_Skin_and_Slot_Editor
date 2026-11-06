@@ -79,8 +79,12 @@ class TextureSettingsTabMixin:
         ctk.CTkLabel(
             tint_frame,
             text=(
-                "Tint Maps do not necessarily need to be converted to another region.\n"
-                "Conversion is only necessary if islands appear too dark or too bright in the game."
+                "Tint Maps do not necessarily need to be converted to another region. "
+                "Conversion is only necessary if islands appear too dark or too bright in the game.\n"
+                "\n"
+                "Good Values to Start:\n"
+                "The Old World -> Enbesa: Brightness = Custom -20\n"
+
             ),
             anchor="w",
             justify="left",

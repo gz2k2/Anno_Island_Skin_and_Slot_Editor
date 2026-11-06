@@ -213,6 +213,9 @@ class CustomContentTabMixin:
                 messagebox.showerror("River Slots", f"Could not save River Slots:\n{exc}", parent=window)
                 return
             configure_custom_river_guids(records)
+            slot_map_window = getattr(self, "slot_map_window", None)
+            if slot_map_window is not None and slot_map_window.winfo_exists():
+                self._slot_map_rebuild_legend()
             state["dirty"] = False
             info.set(f"{len(records)} River Slot(s) | Saved: {path}")
 

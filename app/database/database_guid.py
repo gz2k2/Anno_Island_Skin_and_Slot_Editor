@@ -15,12 +15,6 @@ GUID_LABELS = {
     "116037": "Mine Slot (Arctic)",
     "117741": "Riverslot",
     "117742": "Riverslot - Work Area",
-    "1999002330": "Riverslot (OW)(Taludas)",
-    "1999002331": "Riverslot (OW) - Work Area (Taludas)",
-    "1999002336": "Riverslot (NW)(Taludas)",
-    "1999002337": "Riverslot (NW) - Work Area (Taludas)",
-    "1742004521": "Riverslot (hier0nimus)",
-    "1742004523": "Riverslot - Work Area (hier0nimus)",
     "2144000100": "Riverslot (built in)",
     "2144000101": "Riverslot - Work Area (built in)",    
 }
