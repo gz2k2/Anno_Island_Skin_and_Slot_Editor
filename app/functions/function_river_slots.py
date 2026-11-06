@@ -173,7 +173,7 @@ class RiverSlotEditingMixin:
         game_tree = self._island_slot_ram_game_tree
         map_tree = self._island_slot_ram_map_tree
         game_root, map_root = game_tree.getroot(), map_tree.getroot()
-        container = game_object_container(game_root)
+        container = game_object_container(game_root, map_root)
         primary_guid = str(placement.get("primary_guid", "")).strip()
         workarea_guid = str(placement.get("workarea_guid", "")).strip()
         current_guids = self._slot_map_selected_river_guids()

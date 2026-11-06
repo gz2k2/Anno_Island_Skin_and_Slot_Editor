@@ -238,10 +238,19 @@ def validate_slot_trees(map_root, game_root, strict_deposit_ids=None) -> SlotGat
                 f"GUID mismatch for ObjectId {object_id}: "
                 f"MapName {entry['guid']} / Gamedata {record['guid']}."
             )
-        if record.get("container") != "GameObject":
+        allowed_containers = (
+            {"GameObject", "EditorObject"}
+            if entry["guid"] in {"614", "618"}
+            else {"GameObject"}
+        )
+        if record.get("container") not in allowed_containers:
+            expected_containers = " or ".join(
+                f"{container}/objects" for container in sorted(allowed_containers)
+            )
             report.errors.append(
                 f"Slot ObjectId {object_id} ({record['guid']}) is stored under "
-                f"{record.get('container') or 'unknown'}/objects; expected GameObject/objects."
+                f"{record.get('container') or 'unknown'}/objects; "
+                f"expected {expected_containers}."
             )
         if entry["guid"] in SINGLE_SLOT_GUIDS and entry["category"] != "1":
             report.errors.append(

@@ -122,14 +122,35 @@ def object_records(root):
 
 
 
-def game_object_container(root):
-    """Return the exact native <GameObject>/<objects> runtime container."""
+def game_object_container(root, map_root=None):
+    """Return the GameObject container owning the most MapName-referenced IDs."""
+    containers = []
     for game_object in root.iter():
         if tag(game_object) == "GameObject":
             result = direct(game_object, "objects")
             if result is not None:
-                return result
-    raise ValueError("Gamedata XML has no <GameObject>/<objects> container.")
+                containers.append(result)
+    if not containers:
+        raise ValueError("Gamedata XML has no <GameObject>/<objects> container.")
+    if map_root is not None and len(containers) > 1:
+        map_ids = {
+            (node.text or "").strip()
+            for node in map_root.iter()
+            if tag(node) == "ObjectId" and (node.text or "").strip()
+        }
+        if map_ids:
+            scores = [
+                sum(
+                    text(node, "ID") in map_ids
+                    for node in container
+                    if text(node, "ID")
+                )
+                for container in containers
+            ]
+            best_score = max(scores, default=0)
+            if best_score:
+                return containers[scores.index(best_score)]
+    return containers[0]
 
 
 def oil_based_slot_template(target_guid):
@@ -1416,10 +1437,10 @@ class IslandSlotBaseMixin:
         same = [record for record in records if record["guid"] == spec["guid"]]
         template_source = "same-island"
         if slot_type in NATIVE_DEPOSIT_SLOT_NAMES:
-            templates = [(game_object_container(game_root), template_element(slot_type))]
+            templates = [(game_object_container(game_root, map_root), template_element(slot_type))]
             template_source = "C# native deposit template"
         elif slot_type == "gas slot (arctic)":
-            templates = [(game_object_container(game_root), oil_based_slot_template(spec["guid"]))]
+            templates = [(game_object_container(game_root, map_root), oil_based_slot_template(spec["guid"]))]
             template_source = "oil slot template with gas GUID"
         elif same:
             primary = same[0]
@@ -1434,7 +1455,11 @@ class IslandSlotBaseMixin:
         else:
             templates = None
         if not templates:
-            container = object_container(game_root)
+            container = (
+                game_object_container(game_root, map_root)
+                if slot_type == "Riverslot"
+                else object_container(game_root)
+            )
             if slot_type == "Riverslot":
                 slot, workarea = river_pair()
                 templates = [(container, slot), (container, workarea)]

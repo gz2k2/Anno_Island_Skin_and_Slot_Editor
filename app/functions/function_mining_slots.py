@@ -173,7 +173,7 @@ class MiningSlotEditingMixin:
             self._island_slot_ram_map_tree = self._slot_parse_xml(mp if mp.is_file() else mo)[0]
         game_tree, map_tree = self._island_slot_ram_game_tree, self._island_slot_ram_map_tree
         game_root, map_root = game_tree.getroot(), map_tree.getroot()
-        container = game_object_container(game_root)
+        container = game_object_container(game_root, map_root)
         target_guid = str(placement["guid"])
         if target_guid not in MINE_SLOT_GUIDS:
             raise ValueError(f"Unsupported MineSlot GUID: {target_guid}")

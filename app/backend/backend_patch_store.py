@@ -357,32 +357,53 @@ def _object_container(root):
     return max(candidates, key=lambda item: item[0])[1]
 
 
-def _game_object_container(root):
-    """Return the native runtime container for resource/mining slot objects."""
+def _game_object_containers(root):
+    """Return all native runtime containers in stable document order."""
+    containers = []
     for game_object in root.iter():
         if local_tag(game_object) != "GameObject":
             continue
         objects = child(game_object, "objects")
         if objects is not None:
-            return objects
-    raise ValueError("Gamedata XML has no <GameObject>/<objects> container.")
+            containers.append(objects)
+    if not containers:
+        raise ValueError("Gamedata XML has no <GameObject>/<objects> container.")
+    return containers
+
+
+def _game_object_container(root):
+    """Return the first native runtime container for legacy slot patches."""
+    return _game_object_containers(root)[0]
 
 
 def build_gamedata_slot_patch(original_tree, current_tree):
     original = _object_records(original_tree.getroot())
     current = _object_records(current_tree.getroot())
+    container_indexes = {
+        container: index
+        for index, container in enumerate(_game_object_containers(current_tree.getroot()))
+    }
     upserts = {}
+    upsert_container_indexes = {}
     for object_id, (_parent, node) in current.items():
         old = original.get(object_id)
         if old is None or ET.tostring(old[1]) != ET.tostring(node):
             upserts[object_id] = ET.tostring(node, encoding="unicode")
+            container_index = container_indexes.get(_parent)
+            if container_index is not None:
+                upsert_container_indexes[object_id] = container_index
     removed = sorted(set(original) - set(current))
     groups = [
         ET.tostring(node, encoding="unicode")
         for node in current_tree.getroot().iter()
         if local_tag(node) == "ObjectGroups"
     ]
-    return {"upserts": upserts, "removed": removed, "object_groups": groups}
+    return {
+        "upserts": upserts,
+        "removed": removed,
+        "object_groups": groups,
+        "object_container_indexes": upsert_container_indexes,
+    }
 
 
 def apply_gamedata_slots(tree, payload):
@@ -392,10 +413,16 @@ def apply_gamedata_slots(tree, payload):
         if record is not None:
             record[0].remove(record[1])
     records = _object_records(tree.getroot())
-    container = _game_object_container(tree.getroot())
+    containers = _game_object_containers(tree.getroot())
+    container_indexes = payload.get("object_container_indexes", {})
     for object_id, xml in payload.get("upserts", {}).items():
         replacement = ET.fromstring(xml)
         record = records.get(str(object_id))
+        try:
+            container_index = int(container_indexes.get(str(object_id), 0))
+            container = containers[container_index]
+        except (TypeError, ValueError, IndexError):
+            container = containers[0]
         if record is not None:
             old_parent, old = record
             replacement.tail = old.tail
