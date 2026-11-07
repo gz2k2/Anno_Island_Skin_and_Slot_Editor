@@ -208,7 +208,7 @@
 </>
 <Material><ID>23</>
 <Type>0</>
-<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_beach_07.xml</>
+<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_beach_06.xml</>
 <Repetition>12.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
@@ -263,7 +263,7 @@
 </>
 <Material><ID>0</>
 <Type>0</>
-<FileName>data/graphics/landscape/terrain/south_america/s_roots_01.xml</>
+<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_rock_01.xml</>
 <Repetition>2.000000</>
 <AlphaSharpness>15.000000</>
 <GroundType></>
@@ -274,7 +274,7 @@
 </>
 <Material><ID>18</>
 <Type>0</>
-<FileName>data/graphics/landscape/terrain/texture_pool/tropical_stone_01.xml</>
+<FileName>data/dlc06/graphics/landscape/terrain/colony02/colony02_rock_01.xml</>
 <Repetition>4.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
@@ -388,7 +388,7 @@
 <Repetition>1.300000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\grass\grass_jungle_01.prp</>
+<ObjectFileName>data/dlc06/graphics/props/terrain_props/grass/grass_dry/grass_dry_06.prp</>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
@@ -399,7 +399,7 @@
 <Repetition>2.000000</>
 <AlphaSharpness>5.000000</>
 <GroundType></>
-<ObjectFileName>data\graphics\props\terrain_props\vegetation\bushes\bush_jungle_03_large.prp</>
+<ObjectFileName>data/dlc06/graphics/props/terrain_props/bushes/bushes_dry/bush_dry_large_02.prp</>
 <GritEnabled>0</>
 <GritDirection>1.000000</>
 <GritSlopeThreshold>0.200000</>
