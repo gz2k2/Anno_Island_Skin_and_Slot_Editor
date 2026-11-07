@@ -77,7 +77,8 @@ MINE_WORKAREA_GROUP = "3"
 MINE_PRIMARY_GROUP = "1"
 MINE_MIN_DISTANCE = 2.0
 MINE_MAX_DISTANCE = 20.0
-SINGLE_SLOT_GUIDS = {"100417", "100849", "113750"}
+BUILTIN_SINGLE_SLOT_GUIDS = frozenset(("100417", "100849", "113750"))
+SINGLE_SLOT_GUIDS = set(BUILTIN_SINGLE_SLOT_GUIDS)
 RESOURCE_SLOT_NAMES = {"100417": "clay slot", "100849": "oil slot", "113750": "gas slot (arctic)"}
 SLOT_DEFINITIONS = {
     "Riverslot": {"guid": "117741", "group": "4", "pair": "Riverslot_workarea", "pair_guid": "117742", "pair_group": "3"},
@@ -85,6 +86,23 @@ SLOT_DEFINITIONS = {
     "oil slot": {"guid": "100849", "group": "1"},
     "gas slot (arctic)": {"guid": "113750", "group": "1"},
 }
+BUILTIN_SLOT_NAMES = frozenset(SLOT_DEFINITIONS)
+CUSTOM_SLOT_DEFINITIONS = {}
+
+
+def configure_custom_slots(rows):
+    """Register named single custom slots in the Slot Editor menus and validators."""
+    for name, guid in tuple(CUSTOM_SLOT_DEFINITIONS.items()):
+        SLOT_DEFINITIONS.pop(name, None)
+        SINGLE_SLOT_GUIDS.discard(guid)
+    CUSTOM_SLOT_DEFINITIONS.clear()
+
+    for row in rows:
+        name = row["name"]
+        guid = str(row["guid"])
+        SLOT_DEFINITIONS[name] = {"guid": guid, "group": "1", "custom_slot": True}
+        SINGLE_SLOT_GUIDS.add(guid)
+        CUSTOM_SLOT_DEFINITIONS[name] = guid
 
 TEMPLATE_METADATA = {'clay slot': {'guid': '100417',
                       'source': 'clay oil and gas slots/moderate_c_01_gamedata.xml',

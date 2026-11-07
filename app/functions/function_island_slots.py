@@ -8,6 +8,7 @@ import statistics
 import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
+import customtkinter as ctk
 import app.backend.backend_xml as ET
 from app.backend.backend_patch_store import (
     PATCH_STORE, build_gamedata_slot_patch, build_a7minfo_slot_patch,
@@ -748,9 +749,9 @@ class IslandSlotBaseMixin:
             "gas slot (arctic)": "Gas Slot",
         }
         for name in SLOT_DEFINITIONS:
-            if name == "Riverslot":
+            if name == "Riverslot" or SLOT_DEFINITIONS[name].get("custom_slot"):
                 # The old paired Riverslot insertion is intentionally hidden.
-                # Keep its implementation internally as Riverslot_dont_use only.
+                # Registered custom slots use the separate type dropdown below.
                 continue
             slot_entries.append({
                 "label": slot_labels.get(name, name),
@@ -787,9 +788,8 @@ class IslandSlotBaseMixin:
         slot_entries.append({"kind": "separator"})
         slot_entries.append({
             "label": "Custom Slot",
-            "command": lambda e=event: self._island_slot_add_custom_at_event(
-                e, "Custom Slot", "gas slot (arctic)"
-            ),
+            "state": "normal" if self.slot_map_custom_slot_guids else "disabled",
+            "command": lambda e=event: self._island_slot_add_selected_custom_slot_at_event(e),
         })
         entries.append({"kind": "cascade", "label": "Add Slot", "entries": slot_entries})
         entries.append({"kind": "separator"})
@@ -860,15 +860,28 @@ class IslandSlotBaseMixin:
         self._island_slot_popup_menu(event, self._island_slot_nearest(event))
         return "break"
 
-    def _island_slot_add_custom_at_event(self, event, label, base_type):
-        value = simpledialog.askstring(
-            "Custom Slot GUID",
-            f"Enter the GUID for {label}:",
-            parent=self.slot_map_window,
-        )
-        if value is None:
+    def _island_slot_add_selected_custom_slot_at_event(self, event):
+        label = self.slot_map_custom_slot_var.get()
+        guid = self.slot_map_custom_slot_guids.get(label)
+        definition = SLOT_DEFINITIONS.get(label)
+        if guid is None or definition is None or definition.get("guid") != guid:
+            messagebox.showwarning(
+                "Custom Slot", "Select a configured Custom Slot first.",
+                parent=self.slot_map_window,
+            )
             return
-        guid = value.strip()
+        self._island_slot_add_at_event(event, label)
+
+    def _island_slot_add_custom_at_event(self, event, label, base_type, guid=None):
+        if guid is None:
+            value = simpledialog.askstring(
+                "Custom Slot GUID",
+                f"Enter the GUID for {label}:",
+                parent=self.slot_map_window,
+            )
+            if value is None:
+                return
+            guid = value.strip()
         if not guid or not guid.isdigit() or int(guid) <= 0:
             messagebox.showerror(
                 "Custom Slot GUID",
@@ -1303,20 +1316,73 @@ class IslandSlotBaseMixin:
             ring += 1
         return positions
 
+    def _island_slot_ask_amount(self, name):
+        built = PopupTemplate.create_window(
+            self.slot_map_window,
+            title="Add Island Slot",
+            heading="Add Island Slot",
+            geometry="430x250",
+            min_size=(430, 250),
+            resizable=False,
+            modal=True,
+            maximize=False,
+        )
+        window = built["window"]
+        window.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            window,
+            text=f"How many '{name}' elements should be inserted?",
+            anchor="w",
+        ).grid(row=1, column=0, padx=20, pady=(8, 10), sticky="ew")
+        amount_entry = ctk.CTkEntry(window, width=120)
+        amount_entry.insert(0, "1")
+        amount_entry.grid(row=2, column=0, padx=20, sticky="w")
+
+        result = {"amount": None}
+
+        def cancel():
+            PopupTemplate.close_window(window)
+
+        def confirm(_event=None):
+            try:
+                amount = int(amount_entry.get().strip())
+            except ValueError:
+                amount = 0
+            if not 1 <= amount <= 1000:
+                messagebox.showerror(
+                    "Add Island Slot",
+                    "Enter a whole number between 1 and 1000.",
+                    parent=window,
+                )
+                amount_entry.focus_set()
+                return "break"
+            result["amount"] = amount
+            PopupTemplate.close_window(window)
+            return "break"
+
+        amount_entry.bind("<Return>", confirm)
+        actions = ctk.CTkFrame(window, fg_color="transparent")
+        actions.grid(row=3, column=0, padx=20, pady=(18, 16), sticky="e")
+        ctk.CTkButton(
+            actions, text="Cancel", width=PopupTemplate.BUTTON_WIDTH,
+            command=cancel,
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            actions, text="Add", width=PopupTemplate.BUTTON_WIDTH,
+            command=confirm,
+        ).pack(side="left")
+        PopupTemplate.request_focus(window, amount_entry, delay_ms=100)
+        amount_entry.select_range(0, "end")
+        window.wait_window()
+        return result["amount"]
+
     def _island_slot_add_at_event(self, event, name):
         # A Riverslot_dont_use entry represents one orientation-specific river pair
         # and must therefore always be inserted exactly once.
         if name in RIVERSLOT_DONT_USE_ORIENTATIONS:
             amount = 1
         else:
-            amount = simpledialog.askinteger(
-                "Add Island Slot",
-                f"How many '{name}' elements should be inserted?",
-                parent=self.slot_map_window,
-                initialvalue=1,
-                minvalue=1,
-                maxvalue=1000,
-            )
+            amount = self._island_slot_ask_amount(name)
             if amount is None:
                 return
         progress_window = None
@@ -1331,6 +1397,11 @@ class IslandSlotBaseMixin:
 
             x, z = self._island_slot_world(event)
             slot_type = "Riverslot" if name in RIVERSLOT_DONT_USE_ORIENTATIONS else name
+            template_name = (
+                "oil slot"
+                if SLOT_DEFINITIONS.get(slot_type, {}).get("custom_slot")
+                else slot_type
+            )
             samples, source = self._island_slot_height_samples()
             y = estimate_nearby_height(x, z, samples)
             if y is None:
@@ -1340,7 +1411,7 @@ class IslandSlotBaseMixin:
                     default=None,
                 )
                 y = nearest[3] if nearest else parse_position(
-                    text(template_element(slot_type), "Position")
+                    text(template_element(template_name), "Position")
                 )[1]
                 source = "existing slot" if nearest else "template fallback"
 
@@ -1463,9 +1534,13 @@ class IslandSlotBaseMixin:
             if slot_type == "Riverslot":
                 slot, workarea = river_pair()
                 templates = [(container, slot), (container, workarea)]
+                template_source = f"config_slot.py ({TEMPLATE_METADATA[slot_type]['source']})"
+            elif spec.get("custom_slot"):
+                templates = [(container, oil_based_slot_template(spec["guid"]))]
+                template_source = "custom single-slot template cloned from Oil slot"
             else:
                 templates = [(container, template_element(name))]
-            template_source = f"config_slot.py ({TEMPLATE_METADATA[slot_type]['source']})"
+                template_source = f"config_slot.py ({TEMPLATE_METADATA[slot_type]['source']})"
         used = all_ids(map_root, game_root)
         folder = new_folder_id(records) if slot_type == "Riverslot" else None
         primary_position = parse_position(text(templates[0][1], "Position"))

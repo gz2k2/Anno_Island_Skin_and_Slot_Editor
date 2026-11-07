@@ -34,6 +34,7 @@ from app.functions.function_island_slots import (
 )
 from app.functions.function_place_object import world_from_click
 from app.functions.function_custom_river_slots import load_custom_river_slots
+from app.functions.function_custom_slots import load_custom_slots
 
 # Slot Map height overlay alpha (0 = transparent, 255 = fully opaque).
 SLOT_MAP_HEIGHTMAP_OPACITY = 205
@@ -104,6 +105,10 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_river_type_var = tk.StringVar(value="Enbesa (original)")
         self.slot_map_river_type_guids = {}
         self.slot_map_river_type_values = []
+        self.slot_map_custom_slot_var = tk.StringVar(value="")
+        self.slot_map_custom_slot_guids = {}
+        self.slot_map_custom_slot_values = []
+        self.slot_map_custom_slot_menu = None
         self.combined_slot_window = None
         self.combined_slot_records = []
         self.combined_slot_edit_rows = []
@@ -717,10 +722,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self._init_slot_configuration_state()
         if not self._slot_map_load_points():
             return
+        self._slot_map_prepare_river_types()
+        self._slot_map_prepare_custom_slots()
         if self.slot_map_window is not None and self.slot_map_window.winfo_exists():
             self.slot_map_window.deiconify(); PopupTemplate.safe_activate(self.slot_map_window)
             self._slot_map_rebuild_legend(); self._slot_map_schedule_redraw(); return
-        self._slot_map_prepare_river_types()
         built = MapViewTemplate.build_map_window(
             self, title="Slot Map", heading="Slot Map",
             slot_edit_help=True,
@@ -794,9 +800,36 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         if self.slot_map_river_type_var.get() not in options:
             self.slot_map_river_type_var.set("Enbesa (original)")
 
+    def _slot_map_prepare_custom_slots(self):
+        """Load named single Slots in alphabetic order for the Slot Map menu."""
+        try:
+            rows = load_custom_slots(self.CONFIG_FILE)
+        except (OSError, ValueError, UnicodeError) as exc:
+            rows = []
+            messagebox.showwarning(
+                "Custom Slot", f"Custom Slots could not be loaded:\n{exc}",
+                parent=getattr(self, "slot_map_window", None) or self,
+            )
+        self.slot_map_custom_slot_guids = {
+            row["name"]: row["guid"]
+            for row in sorted(rows, key=lambda record: record["name"].casefold())
+        }
+        self.slot_map_custom_slot_values = list(self.slot_map_custom_slot_guids)
+        if self.slot_map_custom_slot_var.get() not in self.slot_map_custom_slot_guids:
+            self.slot_map_custom_slot_var.set(
+                self.slot_map_custom_slot_values[0]
+                if self.slot_map_custom_slot_values else "No Custom Slots"
+            )
+        menu = getattr(self, "slot_map_custom_slot_menu", None)
+        if menu is not None and menu.winfo_exists():
+            menu.configure(
+                values=self.slot_map_custom_slot_values or ["No Custom Slots"],
+                state="normal" if self.slot_map_custom_slot_values else "disabled",
+            )
+
     def _slot_map_build_river_type_toolbar(self, toolbar):
-        """Place the River Slot Type selector below the Slot Map heading."""
-        toolbar.grid_columnconfigure(2, weight=1)
+        """Place River Slot and Custom Slot selectors below the map heading."""
+        toolbar.grid_columnconfigure(4, weight=1)
         ctk.CTkLabel(toolbar, text="River Slot Type").grid(
             row=0, column=0, padx=(0, 10), sticky="w",
         )
@@ -806,6 +839,17 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             values=self.slot_map_river_type_values,
             width=220,
         ).grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(toolbar, text="Custom Slot:").grid(
+            row=0, column=2, padx=(18, 10), sticky="w",
+        )
+        self.slot_map_custom_slot_menu = ctk.CTkOptionMenu(
+            toolbar,
+            variable=self.slot_map_custom_slot_var,
+            values=self.slot_map_custom_slot_values or ["No Custom Slots"],
+            width=200,
+            state="normal" if self.slot_map_custom_slot_values else "disabled",
+        )
+        self.slot_map_custom_slot_menu.grid(row=0, column=3, sticky="w")
 
     def _slot_map_reload_rd3d(self):
         """Reload RD3D asynchronously and close status only in completion callback."""
@@ -969,6 +1013,15 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         for index, guid in enumerate(sorted(counts, key=lambda v: (len(v), v))):
             visible = self.slot_map_guid_visible.get(guid, True); color = self.slot_map_guid_colors[guid]
             label = GUID_LABELS.get(guid)
+            if label is None:
+                label = next(
+                    (
+                        name for name, custom_guid
+                        in self.slot_map_custom_slot_guids.items()
+                        if custom_guid == guid
+                    ),
+                    None,
+                )
             if label is None:
                 river_role = RIVER_GUID_ROLE.get(guid)
                 if river_role is not None:

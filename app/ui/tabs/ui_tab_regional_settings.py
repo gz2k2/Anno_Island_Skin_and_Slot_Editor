@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import tkinter as tk
+from tkinter import colorchooser, messagebox
 
 import customtkinter as ctk
 
-from app.config.config_gamedata import GLOBAL_AMBIENT_OPTIONS, VEGETATION_PROP_SET_OPTIONS
+from app.config.config_gamedata import (
+    GLOBAL_AMBIENT_OPTIONS,
+    VEGETATION_PROP_SET_OPTIONS,
+)
+from app.config.config_rivercolor import RIVER_COLOR_OPTIONS
 
 
 class RegionalSettingsTabMixin:
@@ -67,9 +72,72 @@ class RegionalSettingsTabMixin:
             list(VEGETATION_PROP_SET_OPTIONS.keys()),
         )
 
-        # MaterialSetFileName: title row 5. Current box spans rows 6+7 so its
+        # Rivercolor: title row 5, current value row 6.
+        self._regional_pair_title(content, 5, "Rivercolor")
+        rivercolor_current_cell = ctk.CTkFrame(content, fg_color="transparent")
+        rivercolor_current_cell.grid(
+            row=6, column=0, padx=(18, 26), pady=(0, 18), sticky="ew"
+        )
+        rivercolor_current_cell.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            rivercolor_current_cell,
+            textvariable=self.rivercolor_var,
+            anchor="w",
+            justify="left",
+        ).grid(row=0, column=0, sticky="ew")
+        self.rivercolor_current_swatch = tk.Canvas(
+            rivercolor_current_cell,
+            width=38,
+            height=28,
+            bg="#666666",
+            bd=0,
+            highlightthickness=1,
+            highlightbackground="#777777",
+        )
+        self.rivercolor_current_swatch.grid(row=0, column=1, padx=(8, 0))
+
+        rivercolor_new_cell = ctk.CTkFrame(content, fg_color="transparent")
+        rivercolor_new_cell.grid(
+            row=6, column=1, padx=(26, 18), pady=(0, 18), sticky="ew"
+        )
+        rivercolor_new_cell.grid_columnconfigure(0, weight=1)
+        self.rivercolor_new_dropdown = ctk.CTkOptionMenu(
+            rivercolor_new_cell,
+            variable=self.new_rivercolor_var,
+            values=list(RIVER_COLOR_OPTIONS.keys()) + ["Custom"],
+            dynamic_resizing=False,
+        )
+        self.rivercolor_new_dropdown.grid(row=0, column=0, sticky="ew")
+        rivercolor_new_cell.grid_columnconfigure(1, weight=0)
+        self.rivercolor_custom_label = ctk.CTkLabel(
+            rivercolor_new_cell,
+            text="Pick Color:",
+        )
+        self.rivercolor_custom_label.grid(row=0, column=1, padx=(12, 0))
+        self.rivercolor_custom_label.grid_remove()
+        self.rivercolor_new_swatch = tk.Canvas(
+            rivercolor_new_cell,
+            width=38,
+            height=28,
+            bg="#666666",
+            bd=0,
+            highlightthickness=1,
+            highlightbackground="#777777",
+        )
+        self.rivercolor_new_swatch.grid(row=0, column=2, padx=(8, 0))
+        self.rivercolor_new_swatch.bind(
+            "<Button-1>", self._open_custom_rivercolor_picker
+        )
+        self.rivercolor_var.trace_add("write", self._update_rivercolor_swatches)
+        self.new_rivercolor_var.trace_add("write", self._update_rivercolor_swatches)
+        self.new_rivercolor_var.trace_add("write", self._update_rivercolor_custom_controls)
+        self.new_rivercolor_custom_var.trace_add("write", self._update_rivercolor_swatches)
+        self._update_rivercolor_custom_controls()
+        self._update_rivercolor_swatches()
+
+        # MaterialSetFileName: title row 7. Current box spans rows 8+9 so its
         # vertical group has exactly the same height as dropdown + entry on the right.
-        self._regional_pair_title(content, 5, "MaterialSetFileName")
+        self._regional_pair_title(content, 7, "MaterialSetFileName")
         ctk.CTkLabel(
             content,
             textvariable=self.material_set_var,
@@ -79,7 +147,7 @@ class RegionalSettingsTabMixin:
             fg_color=("gray86", "gray20"),
             corner_radius=6,
         ).grid(
-            row=6,
+            row=8,
             column=0,
             rowspan=2,
             padx=(18, 26),
@@ -94,7 +162,7 @@ class RegionalSettingsTabMixin:
         self.regional_material_to_var = tk.StringVar(value="The Old World")
         material_dropdown_row = ctk.CTkFrame(content, fg_color="transparent")
         material_dropdown_row.grid(
-            row=6, column=1, padx=(26, 18), pady=(0, 6), sticky="ew"
+            row=8, column=1, padx=(26, 18), pady=(0, 6), sticky="ew"
         )
         material_dropdown_row.grid_columnconfigure((1, 3), weight=1)
         ctk.CTkLabel(material_dropdown_row, text="From:").grid(
@@ -127,7 +195,7 @@ class RegionalSettingsTabMixin:
             textvariable=self.new_material_set_var,
             height=34,
         ).grid(
-            row=7,
+            row=9,
             column=1,
             padx=(26, 18),
             pady=(0, 18),
@@ -140,7 +208,7 @@ class RegionalSettingsTabMixin:
             content,
             textvariable=self.regional_detected_region_var,
             anchor="w",
-        ).grid(row=8, column=1, padx=(26, 18), pady=(0, 12), sticky="w")
+        ).grid(row=10, column=1, padx=(26, 18), pady=(0, 12), sticky="w")
         self._update_regional_detected_region()
 
         ctk.CTkButton(
@@ -149,13 +217,14 @@ class RegionalSettingsTabMixin:
             height=38,
             font=ctk.CTkFont(weight="bold"),
             command=self._save_regional_settings,
-        ).grid(row=9, column=1, padx=(26, 18), pady=(5, 18), sticky="ew")
+        ).grid(row=11, column=1, padx=(26, 18), pady=(5, 18), sticky="ew")
 
         # Explicit equal row minima keep option menus and current-value boxes aligned.
         content.grid_rowconfigure(2, minsize=48)
         content.grid_rowconfigure(4, minsize=48)
-        content.grid_rowconfigure(6, minsize=34)
-        content.grid_rowconfigure(7, minsize=40)
+        content.grid_rowconfigure(6, minsize=48)
+        content.grid_rowconfigure(8, minsize=34)
+        content.grid_rowconfigure(9, minsize=40)
         tab.after_idle(self._reload_regional_settings)
 
     @staticmethod
@@ -189,6 +258,125 @@ class RegionalSettingsTabMixin:
             ipady=10,
             sticky="ew",
         )
+
+    @staticmethod
+    def _watercolor_hex(value):
+        try:
+            argb = int(str(value).strip()) & 0xFFFFFFFF
+        except (TypeError, ValueError):
+            return None
+        red = (argb >> 16) & 0xFF
+        green = (argb >> 8) & 0xFF
+        blue = argb & 0xFF
+        return f"#{red:02X}{green:02X}{blue:02X}"
+
+    @classmethod
+    def _draw_rivercolor_swatch(cls, canvas, values):
+        canvas.delete("all")
+        colors = [
+            color for value in values
+            if (color := cls._watercolor_hex(value)) is not None
+        ]
+        if not colors:
+            colors = ["#666666"]
+        width = 38
+        height = 28
+        for index, color in enumerate(colors):
+            left = round(index * width / len(colors))
+            right = round((index + 1) * width / len(colors))
+            canvas.create_rectangle(
+                left, 0, right, height, fill=color, outline=color,
+            )
+        canvas.create_rectangle(
+            0, 0, width - 1, height - 1,
+            outline="#222222", width=1,
+        )
+
+    def _update_rivercolor_swatches(self, *_args):
+        current_values = [
+            value.strip()
+            for value in self.rivercolor_var.get().splitlines()
+            if value.strip()
+        ]
+        self._draw_rivercolor_swatch(
+            self.rivercolor_current_swatch, current_values,
+        )
+        choice = self.new_rivercolor_var.get()
+        selected = (
+            self.new_rivercolor_custom_var.get().strip()
+            if choice == "Custom"
+            else RIVER_COLOR_OPTIONS.get(choice)
+        )
+        new_values = current_values if selected is None else [selected]
+        self._draw_rivercolor_swatch(self.rivercolor_new_swatch, new_values)
+
+    def _update_rivercolor_custom_controls(self, *_args):
+        if self.new_rivercolor_var.get() == "Custom":
+            self.rivercolor_custom_label.grid()
+            self.rivercolor_new_swatch.configure(cursor="hand2")
+        else:
+            self.rivercolor_custom_label.grid_remove()
+            self.rivercolor_new_swatch.configure(cursor="")
+
+    @staticmethod
+    def _watercolor_value_from_hex(color_hex):
+        argb = 0xFF000000 | int(color_hex.lstrip("#"), 16)
+        return str(argb - 0x100000000 if argb & 0x80000000 else argb)
+
+    def _open_custom_rivercolor_picker(self, _event=None):
+        if self.new_rivercolor_var.get() != "Custom":
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Pick Rivercolor")
+        dialog.geometry("340x150")
+        dialog.resizable(False, False)
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+
+        value_var = tk.StringVar(value=self.new_rivercolor_custom_var.get())
+        ctk.CTkLabel(dialog, text="WaterColor value:").grid(
+            row=0, column=0, padx=16, pady=(16, 4), sticky="w"
+        )
+        value_entry = ctk.CTkEntry(dialog, textvariable=value_var)
+        value_entry.grid(row=1, column=0, padx=16, sticky="ew")
+
+        def choose_color():
+            initial_color = self._watercolor_hex(value_var.get()) or "#666666"
+            _rgb, color_hex = colorchooser.askcolor(
+                color=initial_color,
+                parent=dialog,
+                title="Pick Rivercolor",
+            )
+            if color_hex:
+                value_var.set(self._watercolor_value_from_hex(color_hex))
+
+        def apply_value():
+            try:
+                value = str(int(value_var.get().strip()))
+            except ValueError:
+                messagebox.showerror(
+                    "Rivercolor", "WaterColor value must be a decimal integer.",
+                    parent=dialog,
+                )
+                return
+            self.new_rivercolor_custom_var.set(value)
+            dialog.destroy()
+
+        buttons = ctk.CTkFrame(dialog, fg_color="transparent")
+        buttons.grid(row=2, column=0, padx=16, pady=14, sticky="ew")
+        buttons.grid_columnconfigure(0, weight=1)
+        ctk.CTkButton(
+            buttons, text="Choose Color...", command=choose_color, width=130
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(
+            buttons, text="Cancel", command=dialog.destroy, width=80
+        ).grid(row=0, column=1, padx=(8, 0))
+        ctk.CTkButton(
+            buttons, text="Apply", command=apply_value, width=80
+        ).grid(row=0, column=2, padx=(8, 0))
+        value_entry.focus_set()
 
     @staticmethod
     def _regional_option_box(parent, row, variable, values):

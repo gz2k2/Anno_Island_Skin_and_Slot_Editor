@@ -12,7 +12,8 @@ dist/
 # custom configs and files
 *.ini
 *settings.json
-*.json
+config*.json
+custom*.json
 custom_profiles/
 errorlog.md
 z_errorlog.md
@@ -26,3 +27,4 @@ backups/
 # random folders
 packed/
 libs/
+temp/

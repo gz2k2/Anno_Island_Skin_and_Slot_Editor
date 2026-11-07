@@ -1,12 +1,21 @@
-# Anno Island Reskinner
-
-> **AI-generated documentation:** This README was created with AI assistance and should be reviewed and improved where necessary. Contributions and corrections are welcome.
+# Anno 1800 Island Skin and Slot Editor
 
 [☕ Support development on Ko-fi](http://www.ko-fi.com/gz2k2)
 
-**Anno Island Reskinner** is a desktop tool for editing, reskinning, adapting, validating, and exporting Anno 1800 island/map data. It combines regional conversion, material-set handling, tintmap patching, custom content, object editing, slot editing, XML validation/repair, and map export in one application.
+The **Anno 1800 Island Skin and Slot Editor** is a desktop tool for preparing and editing island projects. It combines unpacking, regional settings, material sets, tint-map adjustment, object and slot editing, custom content, island packing, and filtered export.
 
 > **Important:** Always work on copies of your island and modding data. Some workflows intentionally write patched files or export generated data.
+
+## Contents
+
+- [Detailed workflow](#detailed-workflow)
+- [Settings](#settings)
+- [Custom Content](#custom-content)
+- [Helpers](#helpers)
+- [Finalize and Export](#finalize-and-export)
+- [Troubleshooting](#troubleshooting)
+- [Running from source](#running-from-source)
+- [Building the executable](#building-the-executable)
 
 ## Features
 
@@ -22,7 +31,9 @@
 - Keep supported map edits in RAM until **Save** is explicitly used
 - Validate and repair supported XML/slot structures
 - Export cleaned map data for use in a mod project
-- Export only the custom content actually used by the current island
+- Export used custom objects and configured custom material sets
+- Copy the bundled Island Editor mod files into the Anno 1800 Mod folder
+- Configure and use named custom single Slots and River Slots
 
 ## Linux
 
@@ -33,50 +44,36 @@ tar -xzf Anno_Island_Skin_and_Slot_Editor_v<version>_linux_x86_64.tar.gz
 ./Anno_Island_Skin_and_Slot_Editor_v<version>
 ```
 
-The tools in `./tools/` are detected automatically; otherwise set them under **Settings > General**. Point **maindata** to your Anno 1800 install (e.g. the Steam library folder). Linux file systems are case-sensitive.
+The tools in `./tools/` are detected automatically; otherwise set them under **Settings > General**. Set **Folder 'maindata'** to the game's `maindata` directory containing the `data*.rda` archives, not to the game installation root. Linux file systems are case-sensitive.
 
 Running from source: `sudo apt install python3-tk`, `pip install -r requirements.txt`, then `python Anno_Island_Editor.py`.
 
 ## Detailed workflow
 
-The recommended workflow is **source → working copy → edit → validate/pack → export**. Keep source libraries, working maps, and release/export maps separate.
+The recommended sequence is **configure → create/select a working island → unpack → edit → pack → export**. Keep source maps, working islands, and final exports in separate folders.
 
-### 1. Configure Settings > Map Folders
-Configure the paths you need before creating a working island. **Original Maps** and **Custom Map Folder** are sources, **Temporary Map Folder** is the working-copy destination, and **Map Export Folder** is the final filtered output root.
+### 1. Configure Settings
+Open **Settings** before starting. Configure the game folders and tools you need; the sections below explain each settings page. Use **Save settings** to persist the configuration. Browsed paths are also saved as they are selected.
 
-### 2. Create a working island
-In **Start > Create Custom Island**, choose either **Create from Original Maps** or **Create from CustomFolder**. Original Maps uses the indexed original-map library; CustomFolder lets you choose an `.a7m` from your configured custom source library.
+### 2. Create or select a working island
+On **Start**, choose **Create from Original Islands** or **Create from Custom Folder** to make a working copy, or select an existing `.a7m` file directly. Creating from a source copies the selected island under **Temporary Map Folder** and makes the copy active.
 
-Enter **New folder / Map Name**. The default is `<selected a7m stem>_skinned`. The application copies the selected map variant into `<Temporary Map Folder>/<New Map Name>`, renames map-owned files and matching map-name directory components, preserves shared containers such as `_gamedata`, and selects the newly created `.a7m` as the active working island.
+Select the desired unpack options, then click **Unpack island**. Wait for the operation to finish before editing.
 
-If you already have a working copy, you can select its `.a7m` directly instead of creating another copy.
+### 3. Verify Files and Folders
+Select the active `.a7m` on **Files and Folders**. The app attempts to detect the related `gamedata_original.xml`, `mapname_original.xml`, `rd3d_original.xml`, and TMC **Meshes folder**. Confirm that each path belongs to the same working island; browse to correct any missed path.
 
-### 3. Check Files and Folders
-Verify that the selected `.a7m` and its companion files belong to the intended working map. Keep the complete directory structure together because later workflows use related map files and subfolders.
+### 4. Set island and texture options
+Use **Regional Settings** to choose regional values and a material set. Use **Texture Settings** if tint maps need adjustment. Saved tint-map presets can be selected and applied later.
 
-### 4. Configure regional conversion and textures
-Use **Regional Settings** for target-region/material settings. If required, use **Texture Settings / Tintmaps** to convert supported DDS tintmaps and optionally apply Normal, Brighter, or Darker brightness handling. The native `bc7enc-py` path accelerates DXT1/BC1 encoding when available.
+### 5. Add and edit custom content
+Use **Custom Content > Objects** to register custom object paths and **Custom Content > Slots** to define single Slots or River Slots. Configure the corresponding **Custom Objects Folder** and **Custom Material Sets Folder** in **Settings > Custom**. See [Custom Content](#custom-content) for how entries are saved and exported.
 
-### 5. Edit objects
-Use **Object Configuration** for filtering, replacement, density changes and custom-object workflows. Use **Object Map** for spatial selection, adding/removing/moving objects and area-based editing. Supported preview workflows keep edits in RAM until **Save** is used.
+### 6. Edit objects and slots
+Use **Object Configuration** and its Object Map for supported object edits. Use **Slot Configuration** and the Slot Map for slots. MapName and Gamedata changes are coordinated where required. Review validation feedback and save changes explicitly.
 
-### 6. Edit slots
-Use **Slot Configuration / Slot Map** for river, mine and supported resource/deposit slots. MapName and Gamedata changes are handled together where required. Review validation information and use **Save** to commit the working state.
-
-### 7. Validate and pack
-Review XML, ObjectId, GUID, MapName/Gamedata and slot warnings before finalization. If your edits need to be represented in packed island data, run **Pack Island Data** before exporting. **Export Map copies the existing packed map files and does not replace the packing step.**
-
-### 8. Finalize > Export Map
-1. Click **Export Map**.
-2. Confirm/edit **New Folder / Map Name**. The current `.a7m` stem is pre-filled.
-3. The output becomes `<Map Export Folder>/<Map Name>`.
-4. Map-owned root files and matching map-name folders are renamed consistently to the export name.
-5. Editing artifacts such as XML working files, `.data`, original/backup artifacts and `_tintmap_variants` are filtered out. `.xml.lnk` files are kept.
-6. The export is staged before an existing confirmed destination is replaced.
-7. After success, **Open folder?** can open the finished folder in Windows Explorer.
-
-### 9. Export custom content when required
-**Export custom content files** is separate from Export Map. Use it when the island needs a custom material set or custom `.prp` objects. It exports the selected/used content rather than blindly copying the complete custom-object library.
+### 7. Pack and export
+In **Finalize**, run **Pack Island Data** to rebuild the island's packed data from the available patched XML and changed TMC files. Then use **Export Island** to create a filtered copy in **Map Export Folder**. Export custom content and the Editor Mod Files separately when needed; neither button replaces packing or island export.
 
 ## Application areas
 
@@ -84,7 +81,33 @@ Review XML, ObjectId, GUID, MapName/Gamedata and slot warnings before finalizati
 
 These workflows select the island data used by the editor and provide the paths required by later operations.
 
-The application supports folder-based map workflows and can work with original map sources as well as custom map directories. Keep the full source directory structure intact because multiple workflows rely on related files rather than a single isolated XML file.
+On **Start**, select or create an island and choose which files to unpack. **Files and Folders** shows the active `.a7m`, its original XML files, and the TMC **Meshes folder**. Selecting an `.a7m` can auto-detect related files, but check that all paths point to the same working island before editing or packing.
+
+### Settings
+
+The Settings tab contains four pages. The configuration path is shown in the footer; settings are stored in `config.ini` beside the application.
+
+#### General
+
+- **Folder 'maindata'**: select the Anno 1800 `maindata` folder containing the game's `data*.rda` archives. This is used by the Helpers exports.
+- **Folder 'mod'**: select the Anno 1800 `Mod` folder. **Finalize > Export Editor Mod Files** copies the bundled Island Editor mod here.
+- **RdaConsole** and **FileDBReader**: required tools used for unpacking/packing game data. Bundled tools are detected automatically when available.
+- **TMC parallel processes**: controls parallel TMC processing; the default is 4.
+- **Validate paths** checks that the required tools and bundled XML formats are available. It does not validate every optional export folder.
+- **Save settings** writes the current Settings options and refreshes the registered custom slot GUIDs.
+
+#### Map Folders
+
+Configure the source, working, and output folders described below. Keep these roles separate: source maps should not be used as the working or export destination.
+
+#### Custom
+
+- **Custom Material Sets Folder**: a folder of custom `.materialset` or XML material-set files. The Material Sets and Regional Settings tabs can load these files. **Export custom content files** includes all recognized material sets from this folder.
+- **Custom Objects Folder**: the root folder containing the custom `.prp` files referenced by entries in **Custom Content > Objects**. Export preserves paths relative to this root.
+
+#### Expert Settings
+
+**Experimental** enables features explicitly marked experimental. River Slot placement is always available and is not controlled by this option.
 
 ### Settings > Map Folders
 
@@ -110,7 +133,7 @@ D:/AnnoModding/
 #### Original Maps
 **Purpose:** source library for extracted original Anno islands.
 
-**Used by:** **Start > Create Custom Island > Create from Original Maps**.
+**Used by:** **Start > Create from Original Islands**.
 
 The application recursively scans this root for `.a7m` files and available `mapimage.png` previews. The scan data is written to `original_maps_index.csv` beside the application and is used by the original-map selection popup. If a source contains several variants, you select the variant that should become the basis of your working island.
 
@@ -128,16 +151,16 @@ D:/AnnoModding/OriginalMaps/
 #### Custom Map Folder
 **Purpose:** source library for your own prepared/extracted maps.
 
-**Used by:** **Start > Create Custom Island > Create from CustomFolder**.
+**Used by:** **Start > Create from Custom Folder**.
 
 Use this when the source is not supposed to come from the indexed Original Maps tree. Typical examples are manually extracted islands, reusable base maps, maps from another modding workspace, or prepared source templates.
 
-The chosen `.a7m` is **not edited in place by the Create Custom Island workflow**. It is used as the source for a new copy under Temporary Map Folder.
+The chosen `.a7m` is **not edited in place**. It is used as the source for a new copy under Temporary Map Folder.
 
 Do not confuse this with **Settings > Custom > Custom Objects Folder**. Custom Map Folder contains complete map sources; Custom Objects Folder contains custom `.prp` assets.
 
 #### Temporary Map Folder
-**Purpose:** destination for the editable working copies created by **Create Custom Island**.
+**Purpose:** destination for the editable working copies created from **Create from Original Islands** or **Create from Custom Folder**.
 
 Despite the word “Temporary”, this is effectively the application's **Working Maps** root. A created project can remain here while you edit it.
 
@@ -159,9 +182,9 @@ The creation routine does more than rename the outer folder. Map-owned root file
 This separation is intentional: **Original Maps / Custom Map Folder remain sources; Temporary Map Folder contains the copy you actually modify.**
 
 #### Map Export Folder
-**Purpose:** root directory for the cleaned output from **Finalize > Export Map**.
+**Purpose:** root directory for the cleaned output from **Finalize > Export Island**.
 
-This setting should point to a parent directory, not to a single map project. Export Map asks for the map name and creates:
+This setting should point to a parent directory, not to a single map project. Export Island asks for the map name and creates:
 
 ```text
 <Map Export Folder>/<Map Name>/
@@ -179,7 +202,7 @@ D:/AnnoModding/ExportedMaps/MyIsland_Final/
 
 The export name is also applied to matching map-owned root files and map-name directory components. Therefore an edited working map can be exported under a different final name while keeping its map-specific names consistent.
 
-Export Map is a **filtered release/output copy**, not another working-copy command. It excludes the configured development artifacts, stages the complete export first, and only then replaces an existing destination after confirmation. After success, **Open folder?** opens the specific exported map folder.
+Export Island is a **filtered release/output copy**, not another working-copy command. It excludes development artifacts, stages the complete export first, and only then replaces an existing destination after confirmation.
 
 Do not place Map Export Folder inside the map currently being edited. The exporter rejects source/destination paths that overlap or contain one another.
 
@@ -195,13 +218,13 @@ Example end-to-end path:
 ```text
 Original Maps/.../moderate_l_01.a7m
         |
-        | Create Custom Island, name: MyIsland
+        | Create from Original Islands / Custom Folder, name: MyIsland
         v
 Temporary Map Folder/MyIsland/MyIsland.a7m
         |
         | edit -> Save -> validate -> Pack Island Data
         v
-Finalize > Export Map, name: MyIsland_Final
+Finalize > Export Island, name: MyIsland_Final
         |
         v
 Map Export Folder/MyIsland_Final/MyIsland_Final.a7m
@@ -209,7 +232,7 @@ Map Export Folder/MyIsland_Final/MyIsland_Final.a7m
 
 ### Regional Settings
 
-Regional conversion settings allow the island to be adapted between:
+Use **Regional Settings** to compare original values with the values to be applied to the island. Regional conversion settings allow the island to be adapted between:
 
 - Old World
 - New World
@@ -218,9 +241,19 @@ Regional conversion settings allow the island to be adapted between:
 
 Regional conversion can affect multiple independent parts of an island, including material sets, object data, slots, and tintmaps.
 
+The **Rivercolor** dropdown includes built-in values, **Original**, and **Custom**. Selecting **Custom** exposes a color preview; click it to choose a color or enter a decimal `WaterColor` value. The selected rivercolor is saved with the regional Gamedata settings.
+
 ### Texture Settings / Tintmaps
 
 The tintmap workflow patches supported DDS tintmaps for a selected source and target region.
+
+Set **From**, **To**, and **Brightness** in **Tint Map Settings**, then use **Patch Tintmaps**. **Custom** brightness accepts a whole-number offset from -255 to 255. The table below stores reusable settings with an optional comment:
+
+- **Save Settings** adds the current From/To/Brightness/comment values.
+- Select a row to load it into the controls. **Update Selected** replaces that row with the current values.
+- **Delete Selected** removes the selected rows.
+
+Presets are stored in `config_tintmap_presets.json` beside the application configuration. A suggested Old World-to-Enbesa preset is provided when no preset file exists.
 
 Brightness modes include:
 
@@ -236,43 +269,42 @@ Tintmap processing may create an internal helper/cache directory named:
 _tintmap_variants/
 ```
 
-This directory is used by the editing workflow and is **not included by Export Map**.
+This directory is used by the editing workflow and is **not included by Export Island**.
 
 ### Material Sets
 
-Material sets can be selected and handled as part of the regional/finalization workflow.
+The **Material Sets** tab can browse bundled material sets and the optional **Custom Material Sets Folder**. Open an `.xml` or `.materialset` file, edit its values, use **Reset** to discard unsaved edits, and **Save as...** to write a new material set without replacing the source.
 
-When **Export custom content files** exports the active material set, the resulting structure is:
-
-```text
-<export folder>/
-└── data/
-    └── config/
-        └── engine/
-            └── material_sets/
-                ├── <name>.materialset
-                └── <name>.xml.lnk
-```
-
-The `.xml.lnk` points to:
-
-```text
-data/config/engine/material_sets/<name>.materialset
-```
+Saving creates both a `.materialset` and its `.xml.lnk` companion. **Regional Settings** can select a material set for the island. **Finalize > Export custom content files** separately includes every recognized custom material set in the configured Custom Material Sets Folder.
 
 ### Custom Content
 
-The **Custom Content** workflow allows user-defined objects, categories, and regions to be integrated into the existing object-selection and editing workflows.
+The **Custom Content** tab has two editors: **Objects** and **Slots**. User-defined entries are stored beside the application configuration and merged into the relevant object or slot workflows.
 
-Custom definitions are stored separately from the built-in object database, so the base database does not need to be modified for every custom object.
+#### Objects
 
-The application can merge custom objects dynamically into object tables, category pickers, replace workflows, and place-object workflows.
+Each object entry has a **Region**, **Category**, and **Object** path. Use **Select Region** and **Select Category** to choose built-in or custom values, then **Add** or **Change** the table row. **Delete** removes selected rows. Click **Save** to write the table; unsaved edits are not persisted when the popup closes.
+
+**Import .csv** can add or overwrite object rows and create missing custom region/category options. Review the import result and click **Save** to persist object rows. **Export .csv** writes the current table to a CSV file.
+
+Object records and custom selection options are stored separately as `custom_objects.json` and `custom_object_options.json` beside the application configuration. The built-in object database is not modified.
+
+#### Slots
+
+Click **Slots** to manage both single Slots and River Slots. Choose **Slot Type** before adding an entry:
+
+- **Slot** uses one positive numeric **GUID**.
+- **River Slot** uses a positive numeric **GUID** and **GUID Work Area**.
+
+Enter a unique name and GUID values, then click **Add**. Select a row and edit its fields to use **Change**. **Delete** removes selected entries; **Save** writes both slot lists and registers them with the Slot Editor. Duplicate names/GUIDs and built-in GUID conflicts are rejected.
+
+Single Slots are saved in `config_custom_slots.json`; River Slots are saved in `config_custom_riverslots.json`. In the Slot Map, choose a configured single Slot from **Custom Slot** before right-clicking and choosing **Add Slot > Custom Slot**. Custom River Slot pairs appear in **River Slot Type**. The map legend uses configured single-slot names for their GUID labels.
 
 #### Custom Objects Folder
 
 The **Custom Objects Folder** contains the physical custom object files referenced by the custom object definitions.
 
-When **Export custom content files** is used, the application does **not** blindly copy the entire Custom Objects Folder. It exports the custom objects that are registered and actually used by the current island.
+When **Export custom content files** is used, the application does **not** blindly copy the entire Custom Objects Folder. It exports only registered custom objects that are actually referenced by the current island. The configured **Custom Material Sets Folder** is handled differently: all recognized material sets in that folder are included.
 
 For every used `.prp`, its directory structure relative to the configured Custom Objects Folder is preserved.
 
@@ -338,6 +370,8 @@ Map editing is designed around a RAM working state where supported changes remai
 
 Slot editing covers supported island slot data such as river, mine, and resource/deposit slots.
 
+The Slot Map has a **River Slot Type** selector for built-in or configured River Slot pairs and a **Custom Slot** selector for configured single Slots. The latter is alphabetically sorted; when **Add Slot > Custom Slot** is chosen from the map's right-click menu, the selected slot's configured GUID is used. Configured single-slot names are shown in the map legend next to their GUIDs.
+
 The visual **Slot Map** can provide operations for:
 
 - selecting slots
@@ -352,6 +386,16 @@ The visual **Slot Map** can provide operations for:
 
 Slot Map changes are kept in a working state and are written by the explicit Save workflow. Validation is performed before synchronized XML changes are installed.
 
+### Helpers
+
+The **Helpers** tab extracts source files directly from the configured RDA archives. It is separate from **Finalize** exports:
+
+- **Export material_sets** extracts `material_sets/` content from `data0.rda` through `data33.rda` into a folder you choose. Archives are processed in ascending order, so later archives can replace earlier files.
+- **Export All Maps** extracts the `sessions\islands` content. **Create .lnk files for normal maps** controls whether normal-map textures are represented by links; the export also creates an A7M source CSV.
+- **Export Custom** runs the configured RdaConsole filter from the **Custom** field. Enter the filter used by RdaConsole, then run the export.
+
+These actions require a valid **Folder 'maindata'** and a working RdaConsole path in Settings.
+
 ### Validation and XML repair
 
 The project contains dedicated validation and repair functionality for supported XML structures.
@@ -360,59 +404,63 @@ Validation is especially important when MapName and Gamedata references are chan
 
 ## Finalize and Export
 
-### Export Map
+The **Finalize** tab contains separate actions. Run **Pack Island Data** before **Export Island** when XML edits need to be included in the exported island. Content exports below are separate and do not pack or export the island itself.
 
-**Export Map** creates a filtered copy of the selected map directory.
+### CleanUp
 
-The export intentionally excludes development/editing artifacts such as supported backup/original data and XML working files according to the export filter.
+**CleanUp** recursively deletes `.xml` and `.data` files, files whose names contain `_original` or `_backup`, and common backup files from the active island root. It does not remove directories. **This is destructive and cannot be undone.** Use it only after packing/exporting and only when you no longer need the working XML or backups.
 
-In addition, the following tintmap helper directory is explicitly excluded wherever it occurs in the map tree:
+### Pack Island Data
 
-```text
-_tintmap_variants/
-```
+**Pack Island Data** rebuilds the active island's packed data from available patched XML (falling back to original XML when a patched file is missing), repacks changed TMC files from the **Meshes folder**, installs the resulting binary data, and repacks the `.a7m`. If a patched A7MINFO XML exists, it is also rebuilt. Existing binaries are backed up when **Back up existing binary files** is enabled.
 
-The export is staged before replacing an existing confirmed destination. This reduces the chance that a cancelled or failed export destroys the previous exported map.
+The active `.a7m`, its unpacked data folder, the Meshes folder, RdaConsole, and FileDBReader must be available. Review the Finalize log and any warnings before continuing.
+
+### Export Island
+
+**Export Island** creates a filtered copy of the active map directory under `<Map Export Folder>/<Map Name>`. The current `.a7m` name is offered as the default; you may enter a different output name. The exporter renames matching map-owned files/folders and stages the copy before replacing an existing destination after confirmation.
+
+It copies existing files only; **it does not pack XML edits**. Run **Pack Island Data** first when needed. The export excludes `.xml`, `.data`, `.json`, original/backup artifacts, and `_tintmap_variants`. `.xml.lnk` files are retained. The source and destination must be separate, non-overlapping folders.
 
 ### Export custom content files
 
-This export is separate from **Export Map** and collects the additional content required by the current island.
+This button asks for an export destination and includes:
 
-It can export:
+- Only registered custom object files referenced by the active island, placed under `custom_objects/` with their path relative to **Custom Objects Folder** preserved.
+- Every `.materialset` or `.xml` material set in **Settings > Custom > Custom Material Sets Folder**, placed under `data/config/engine/material_sets/` with a matching `.xml.lnk` companion. If both extensions exist for the same name, `.materialset` takes precedence.
 
-- the selected material set
-- the corresponding `.xml.lnk`
-- used custom `.prp` objects
+This export does not include the bundled Editor Mod Files or custom River Slot configuration files.
 
-Material sets are exported under:
+### Export Editor Mod Files
 
-```text
-data/config/engine/material_sets/
-```
+**Export Editor Mod Files** copies the bundled `[IslandEditor] ModFiles [gz2k2]` package into the configured Anno 1800 **Mod** folder. It includes the editor's required mod content, including bundled material sets and integrated River Slot files. Configure **Settings > General > Folder 'mod'** first. Existing files are listed for overwrite confirmation.
 
-Custom objects are exported under:
+### Stop immediately
 
-```text
-custom_objects/
-```
+This button is enabled while a long operation is running. Use it to request cancellation; wait for the status window and log to confirm the operation has stopped before closing the app or changing files.
 
-with their directory hierarchy relative to **Custom Objects Folder** preserved.
+## Troubleshooting
 
-Only custom object files actually used by the current island are included.
+- **Validate paths** reports missing RdaConsole, FileDBReader, or bundled XML format files. Correct these in **Settings > General**. Optional map/export folders are configured separately.
+- **Pack Island Data** requires an active `.a7m`, its unpacked data folder, and the matching Meshes folder. Check **Files and Folders** if packing reports a missing source.
+- **Export Island** requires **Map Export Folder** and cannot write inside or over the active source map. Choose a separate output root in **Settings > Map Folders**.
+- **Export custom content files** reports missing `.prp` files when a referenced custom object cannot be found under **Custom Objects Folder**. Check the object path in **Custom Content > Objects** and the folder in **Settings > Custom**.
+- **Export Editor Mod Files** requires an existing Anno 1800 **Mod** folder configured under **Settings > General**. Confirm the overwrite prompt to replace files from an earlier copy.
+- A configured single Slot is available in the Slot Map's **Custom Slot** dropdown after it is saved in **Custom Content > Slots**. If the list is empty or disabled, add and save a Slot first.
 
 ## Project structure
 
-The application source is organized as a Python package:
+Key application files and packages:
 
 ```text
-Anno Island Reskinner.py
+Anno_Island_Editor.py
 00_build_onefile.py
 version.txt
 
 app/
 ├── main.py
 ├── backend/
-│   └── xml_backend.py
+│   └── backend_xml.py
 ├── config/
 │   ├── config_colors.py
 │   ├── config_gamedata.py
@@ -422,6 +470,8 @@ app/
 │   └── database_props.py
 ├── functions/
 │   ├── function_custom_content.py
+│   ├── function_custom_slots.py
+│   ├── function_custom_river_slots.py
 │   ├── function_density.py
 │   ├── function_island_slots.py
 │   ├── function_map_export.py
@@ -454,25 +504,20 @@ app/
         ├── ui_tab_start.py
         └── ui_tab_texture_settings.py
 
-tests/
-├── test_native_deposit_integration.py
-├── test_original_deposit_variants.py
-├── test_slot_validation.py
-└── test_xml_repair.py
+tests/  (automated tests; not required by the application at runtime)
 ```
 
 Each Python package directory contains its own `__init__.py`.
-
-The `tests/` package is for development/testing and is not required by the application at runtime.
 
 ## Running from source
 
 A Python environment with the application's dependencies is required. The GUI uses CustomTkinter/Pillow and the current XML backend uses lxml.
 
-Start the application from the project root with:
+Install the requirements from the project root, then start the application with:
 
 ```bash
-python "Anno Island Reskinner.py"
+python -m pip install -r requirements.txt
+python Anno_Island_Editor.py
 ```
 
 For development, run tests from the project root with:
@@ -481,7 +526,7 @@ For development, run tests from the project root with:
 python -m pytest
 ```
 
-## Building the Windows executable
+## Building the executable
 
 The repository contains:
 
@@ -489,7 +534,7 @@ The repository contains:
 00_build_onefile.py
 ```
 
-It validates the expected project/package structure and builds the Windows application with PyInstaller.
+It validates the expected project/package structure and builds a PyInstaller one-file application for the operating system on which it is run. Build on the target operating system; PyInstaller does not cross-compile Windows and Linux executables.
 
 Run:
 
@@ -503,16 +548,10 @@ The application version is read from:
 version.txt
 ```
 
-If `version.txt` contains:
+The output name follows `APP_NAME_BASE` and the version in `version.txt`. For example, with version `0.120.12`, the Windows executable is named:
 
 ```text
-0.107.24
-```
-
-the generated executable is named:
-
-```text
-Anno_Island_Reskinner_0.107.24.exe
+Anno_Island_Skin_and_Slot_Editor_v0.120.12.exe
 ```
 
 The build is written to the `dist/` directory.
@@ -526,8 +565,8 @@ The GitHub Actions release workflow uses `version.txt` as the release version an
 For a tagged release, the Git tag should match the version in `version.txt`:
 
 ```text
-version.txt: 0.107.24
-Git tag:     v0.107.24
+version.txt: 0.120.12
+Git tag:     v0.120.12
 ```
 
 A mismatch is intended to stop the release workflow rather than publishing an incorrectly versioned executable.
@@ -547,7 +586,7 @@ A mismatch is intended to stop the release workflow rather than publishing an in
 
 Bug reports, corrections, documentation improvements, and code contributions are welcome.
 
-Because this README was initially AI-generated, manual review and corrections are especially appreciated whenever application behavior changes.
+When application behavior changes, update the usage instructions and verify that menu names and workflow descriptions still match the UI.
 
 ## Support
 

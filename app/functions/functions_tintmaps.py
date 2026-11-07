@@ -61,8 +61,112 @@ _BRIGHTNESS_OFFSETS = {
     "Brighter (+12)": BRIGHTER_RGB_OFFSET,
     "Darker (-12)": DARKER_RGB_OFFSET,
 }
+TINTMAP_PRESET_FILENAME = "config_tintmap_presets.json"
+DEFAULT_TINTMAP_PRESETS = ({
+    "from_region": "The Old World",
+    "to_region": "Enbesa",
+    "brightness": "Custom",
+    "custom_offset": "-20",
+    "comment": "",
+},)
 # Keep CPU-bound Python compression from monopolizing the GUI interpreter.
 TINTMAP_MAX_WORKERS = 8
+
+
+def tintmap_presets_path(config_file: str | Path) -> Path:
+    """Return the Tint Map preset path beside the application configuration."""
+    return Path(config_file).expanduser().resolve().parent / TINTMAP_PRESET_FILENAME
+
+
+def validate_tintmap_presets(rows: object) -> list[dict[str, str]]:
+    """Validate and normalize saved From/To/Brightness records."""
+    if not isinstance(rows, list):
+        raise ValueError("Tint Map presets must be a list.")
+
+    regions = {
+        "The Old World", "The New World", "Enbesa", "Arctic",
+    }
+    result = []
+    for index, row in enumerate(rows, 1):
+        if not isinstance(row, dict):
+            raise ValueError(f"Invalid Tint Map preset at row {index}.")
+        from_region = str(row.get("from_region", "")).strip()
+        to_region = str(row.get("to_region", "")).strip()
+        brightness = str(row.get("brightness", "")).strip()
+        comment = str(row.get("comment", "")).strip()
+        if from_region not in regions or to_region not in regions:
+            raise ValueError(f"Select valid From and To regions (row {index}).")
+        if brightness not in BRIGHTNESS_OPTIONS:
+            raise ValueError(f"Select a valid brightness setting (row {index}).")
+
+        custom_offset = "0"
+        if brightness == "Custom":
+            try:
+                offset = int(str(row.get("custom_offset", "")).strip())
+            except ValueError as exc:
+                raise ValueError(
+                    f"Custom brightness must be a whole number (row {index})."
+                ) from exc
+            if not -255 <= offset <= 255:
+                raise ValueError(
+                    f"Custom brightness must be between -255 and 255 (row {index})."
+                )
+            custom_offset = str(offset)
+
+        result.append({
+            "from_region": from_region,
+            "to_region": to_region,
+            "brightness": brightness,
+            "custom_offset": custom_offset,
+            "comment": comment,
+        })
+    return result
+
+
+def load_tintmap_presets(config_file: str | Path) -> list[dict[str, str]]:
+    """Load stored Tint Map presets, falling back to the suggested starting row."""
+    path = tintmap_presets_path(config_file)
+    legacy_path = path.with_name("tintmap_presets.json")
+    if not path.exists() and legacy_path.is_file():
+        try:
+            os.replace(legacy_path, path)
+        except OSError:
+            path = legacy_path
+    if not path.exists():
+        return [dict(row) for row in DEFAULT_TINTMAP_PRESETS]
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(data, dict) or data.get("schema") != 1:
+        raise ValueError("Unsupported Tint Map preset file format.")
+    return validate_tintmap_presets(data.get("presets"))
+
+
+def save_tintmap_presets(
+    config_file: str | Path, rows: object,
+) -> Path:
+    """Validate and atomically save Tint Map presets beside the config file."""
+    records = validate_tintmap_presets(rows)
+    path = tintmap_presets_path(config_file)
+    legacy_path = path.with_name("tintmap_presets.json")
+    if not path.exists() and legacy_path.is_file():
+        try:
+            os.replace(legacy_path, path)
+        except OSError:
+            pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix="tintmap_presets_", suffix=".tmp", dir=path.parent,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump({"schema": 1, "presets": records}, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return path
 
 # Robust median/IQR profiles calculated from the supplied tintmap analysis.
 # Values are file-level RGB means. The mapper aligns source median/spread with

@@ -200,7 +200,7 @@ def apply_tag_values(tree, payload):
 
 
 def apply_gamedata_regional(tree, payload):
-    """Apply Regional Settings and insert VegetationPropSetName when absent."""
+    """Apply Regional Settings and an optional Rivercolor to GUID 1001608."""
     values = {str(key): str(value) for key, value in payload.get("values", {}).items()}
     found = set()
     for node in tree.getroot().iter():
@@ -221,6 +221,17 @@ def apply_gamedata_regional(tree, payload):
         node = ET.Element(namespace + "VegetationPropSetName")
         node.text = values["VegetationPropSetName"]
         session.append(node)
+
+    rivercolor = payload.get("rivercolor")
+    if rivercolor is not None:
+        for parent in tree.getroot().iter():
+            for obj in parent:
+                guid = child(obj, "guid")
+                if guid is None or (guid.text or "").strip() != "1001608":
+                    continue
+                for node in obj.iter():
+                    if local_tag(node) == "WaterColor":
+                        node.text = str(rivercolor)
 
 def apply_rd3d_settings(tree, payload):
     """Apply settings and insert a missing Terrain/MaterialSetFileName cleanly."""

@@ -32,7 +32,7 @@ class SettingsTabMixin:
 
         ctk.CTkLabel(
             general_box,
-            text="Gamefiles",
+            text="Anno 1800 Folders",
             font=ctk.CTkFont(size=18, weight="bold"),
         ).grid(row=0, column=0, columnspan=3, padx=15, pady=(15, 5), sticky="w")
 
@@ -51,6 +51,18 @@ class SettingsTabMixin:
             width=110,
             command=self._select_gamefiles_folder,
         ).grid(row=0, column=2, padx=(8, 15), pady=14)
+        ctk.CTkLabel(source, text="Folder 'mod':").grid(
+            row=1, column=0, padx=(15, 8), pady=(0, 14), sticky="w"
+        )
+        ctk.CTkEntry(source, textvariable=self.mod_folder_var).grid(
+            row=1, column=1, padx=8, pady=(0, 14), sticky="ew"
+        )
+        ctk.CTkButton(
+            source,
+            text="Browse",
+            width=110,
+            command=self._select_mod_folder,
+        ).grid(row=1, column=2, padx=(8, 15), pady=(0, 14))
 
         ctk.CTkLabel(
             general_box,

@@ -1,0 +1,69 @@
+{
+  "Version": "1.0.0",
+  "ModID": "shared-riverslots-map-editor-gz2k2",
+  "IncompatibleIds": [],
+  "ModDependencies": null,
+  "Category": {
+    "Chinese": "共享",
+    "English": "Shared",
+    "French": "Partagé",
+    "German": "Shared",
+    "Italian": "Condiviso",
+    "Japanese": "シェアード",
+    "Korean": "공유",
+    "Polish": "Udostępnionych",
+    "Russian": "Совместный",
+    "Spanish": "Compartido",
+    "Taiwanese": "共用"
+  },
+  "ModName": {
+    "Chinese": "Shared Riverslots Map Editor gz2k2",",
+    "English": "Shared Riverslots Map Editor gz2k2",
+    "French": "Shared Riverslots Map Editor gz2k2",
+    "German": "Shared Riverslots Map Editor gz2k2",
+    "Italian": "Shared Riverslots Map Editor gz2k2",
+    "Japanese": "Shared Riverslots Map Editor gz2k2",
+    "Korean": "Shared Riverslots Map Editor gz2k2",
+    "Polish": "Shared Riverslots Map Editor gz2k2",
+    "Russian": "Shared Riverslots Map Editor gz2k2",
+    "Spanish": "Shared Riverslots Map Editor gz2k2",
+    "Taiwanese": "Shared Riverslots Map Editor gz2k2"
+  },
+  "Description": {
+    "Chinese": "Shared Riverslots Map Editor gz2k2",
+    "English": "Shared Riverslots Map Editor gz2k2",
+    "French": "Shared Riverslots Map Editor gz2k2",
+    "German": "Shared Riverslots Map Editor gz2k2",
+    "Italian": "Shared Riverslots Map Editor gz2k2",
+    "Japanese": "Shared Riverslots Map Editor gz2k2",
+    "Korean": "Shared Riverslots Map Editor gz2k2",
+    "Polish": "Shared Riverslots Map Editor gz2k2",
+    "Russian": "Shared Riverslots Map Editor gz2k2",
+    "Spanish": "Shared Riverslots Map Editor gz2k2",
+    "Taiwanese": "Shared Riverslots Map Editor gz2k2"
+  },
+  "KnownIssues": [
+    {
+      "Chinese": null,
+      "English": null,
+      "French": null,
+      "German": null,
+      "Italian": null,
+      "Japanese": null,
+      "Korean": null,
+      "Polish": null,
+      "Russian": null,
+      "Spanish": null,
+      "Taiwanese": null
+    }
+  ],
+  "DLCDependencies": [
+    {
+      "DLC": "NewWorldRising",
+      "Dependant": "partly"
+    }
+  ],
+  "CreatorName": "gz2k2",
+  "CreatorContact": "https://github.com/gz2k2",
+  "Image": null
+}

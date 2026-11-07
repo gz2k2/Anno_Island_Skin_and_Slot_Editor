@@ -9,9 +9,11 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from app.functions.functions_tintmaps import (
-    BRIGHTNESS_OPTIONS, REGIONS, patch_island_tintmaps, tintmap_encoder_status,
+    BRIGHTNESS_OPTIONS, REGIONS, load_tintmap_presets, patch_island_tintmaps,
+    save_tintmap_presets, tintmap_encoder_status, validate_tintmap_presets,
 )
 from app.templates.template_statuswindow import StatusWindowTemplate
+from app.templates.template_treeview import TreeviewTemplate
 
 
 class TextureSettingsTabMixin:
@@ -19,6 +21,7 @@ class TextureSettingsTabMixin:
 
     def _build_texture_settings_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(3, weight=1)
         ctk.CTkLabel(
             tab,
             text="Texture Settings",
@@ -29,6 +32,7 @@ class TextureSettingsTabMixin:
         self.tintmap_target_region_var = tk.StringVar(value="Enbesa")
         self.tintmap_brightness_var = tk.StringVar(value="Normal")
         self.tintmap_custom_offset_var = tk.StringVar(value="0")
+        self.tintmap_comment_var = tk.StringVar(value="")
         tint_frame = ctk.CTkFrame(tab)
         tint_frame.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
         tint_frame.grid_columnconfigure((1, 3, 5), weight=1)
@@ -65,6 +69,7 @@ class TextureSettingsTabMixin:
             width=80,
             placeholder_text="Offset",
         )
+        self._on_tintmap_brightness_changed()
         ctk.CTkButton(
             tint_frame, text="Patch Tintmaps", command=self._start_tintmap_patch,
         ).grid(row=1, column=6, padx=(0, 14), pady=14, sticky="ew")
@@ -76,20 +81,204 @@ class TextureSettingsTabMixin:
             anchor="w",
         ).grid(row=2, column=1, padx=(0, 12), pady=(0, 12), sticky="w")
         self._update_texture_detected_region()
-        ctk.CTkLabel(
-            tint_frame,
-            text=(
-                "Tint Maps do not necessarily need to be converted to another region. "
-                "Conversion is only necessary if islands appear too dark or too bright in the game.\n"
-                "\n"
-                "Good Values to Start:\n"
-                "The Old World -> Enbesa: Brightness = Custom -20\n"
+        preset_actions = ctk.CTkFrame(tab, fg_color="transparent")
+        preset_actions.grid(row=2, column=0, padx=20, pady=(0, 8), sticky="ew")
+        ctk.CTkButton(
+            preset_actions, text="Save Settings", width=140,
+            command=self._save_tintmap_preset,
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            preset_actions, text="Update Selected", width=150,
+            command=self._update_tintmap_preset,
+        ).pack(side="left", padx=8)
+        ctk.CTkButton(
+            preset_actions, text="Delete Selected", width=150,
+            fg_color="#8a3d3d", hover_color="#6f3030",
+            command=self._delete_tintmap_presets,
+        ).pack(side="left", padx=8)
+        ctk.CTkLabel(preset_actions, text="Comment:").pack(
+            side="left", padx=(16, 6)
+        )
+        ctk.CTkEntry(
+            preset_actions,
+            textvariable=self.tintmap_comment_var,
+            placeholder_text="Optional comment",
+            width=240,
+        ).pack(side="left", padx=(0, 8))
 
-            ),
-            anchor="w",
-            justify="left",
-            wraplength=800,
-        ).grid(row=3, column=0, columnspan=7, padx=14, pady=(0, 14), sticky="ew")
+        preset_table_frame = ctk.CTkFrame(tab)
+        preset_table_frame.grid(
+            row=3, column=0, padx=20, pady=(0, 20), sticky="nsew"
+        )
+        preset_table_frame.grid_columnconfigure(0, weight=1)
+        preset_table_frame.grid_rowconfigure(0, weight=1)
+        table = TreeviewTemplate.create(
+            preset_table_frame,
+            columns=("from_region", "to_region", "settings", "comment"),
+            headings={
+                "from_region": "From",
+                "to_region": "To",
+                "settings": "Settings",
+                "comment": "Comment",
+            },
+            min_widths={
+                "from_region": 100, "to_region": 90,
+                "settings": 100, "comment": 90,
+            },
+            max_widths={
+                "from_region": 220, "to_region": 220,
+                "settings": 240, "comment": 420,
+            },
+            stretch=(),
+            selectmode="extended",
+            dynamic_width=True,
+        )
+        self.tintmap_preset_tree = table["tree"]
+        self.tintmap_preset_tree.bind(
+            "<<TreeviewSelect>>", self._on_tintmap_preset_selected, add="+"
+        )
+        try:
+            presets = load_tintmap_presets(self.CONFIG_FILE)
+        except (OSError, UnicodeError, ValueError) as exc:
+            messagebox.showwarning(
+                "Tint Map Settings",
+                f"Saved settings could not be loaded:\n{exc}",
+            )
+            presets = load_tintmap_presets(Path(self.CONFIG_FILE).with_name("missing.ini"))
+        self._render_tintmap_presets(presets)
+
+    @staticmethod
+    def _tintmap_preset_settings(record):
+        if record["brightness"] == "Custom":
+            return f"Custom {record['custom_offset']}"
+        return record["brightness"]
+
+    def _tintmap_tree_records(self):
+        records = []
+        for item in self.tintmap_preset_tree.get_children(""):
+            from_region, to_region, settings, comment = self.tintmap_preset_tree.item(
+                item, "values"
+            )
+            if str(settings).startswith("Custom "):
+                brightness = "Custom"
+                custom_offset = str(settings)[len("Custom "):].strip()
+            else:
+                brightness = str(settings)
+                custom_offset = "0"
+            records.append({
+                "from_region": str(from_region),
+                "to_region": str(to_region),
+                "brightness": brightness,
+                "custom_offset": custom_offset,
+                "comment": str(comment),
+            })
+        return records
+
+    def _render_tintmap_presets(self, records, selected_index=None):
+        tree = self.tintmap_preset_tree
+        tree.delete(*tree.get_children(""))
+        for record in records:
+            tree.insert(
+                "", "end",
+                values=(
+                    record["from_region"],
+                    record["to_region"],
+                    self._tintmap_preset_settings(record),
+                    record.get("comment", ""),
+                ),
+            )
+        children = tree.get_children("")
+        if selected_index is not None and 0 <= selected_index < len(children):
+            selected = children[selected_index]
+            tree.selection_set(selected)
+            tree.focus(selected)
+            tree.see(selected)
+
+    def _save_tintmap_preset_rows(self, records, selected_index=None):
+        try:
+            path = save_tintmap_presets(self.CONFIG_FILE, records)
+        except (OSError, UnicodeError, ValueError) as exc:
+            messagebox.showerror(
+                "Tint Map Settings", f"Settings could not be saved:\n{exc}"
+            )
+            return False
+        self._render_tintmap_presets(records, selected_index)
+        self.status_var.set(f"Tint Map settings saved: {path.name}")
+        return True
+
+    def _current_tintmap_preset(self):
+        return validate_tintmap_presets([{
+            "from_region": self.tintmap_source_region_var.get(),
+            "to_region": self.tintmap_target_region_var.get(),
+            "brightness": self.tintmap_brightness_var.get(),
+            "custom_offset": self.tintmap_custom_offset_var.get(),
+            "comment": self.tintmap_comment_var.get(),
+        }])[0]
+
+    def _save_tintmap_preset(self):
+        try:
+            record = self._current_tintmap_preset()
+        except ValueError as exc:
+            messagebox.showerror("Tint Map Settings", str(exc))
+            return
+        records = self._tintmap_tree_records()
+        records.append(record)
+        self._save_tintmap_preset_rows(records, selected_index=len(records) - 1)
+
+    def _update_tintmap_preset(self):
+        selected = self.tintmap_preset_tree.selection()
+        if len(selected) != 1:
+            messagebox.showwarning(
+                "Tint Map Settings", "Select one table entry to update."
+            )
+            return
+        try:
+            record = self._current_tintmap_preset()
+        except ValueError as exc:
+            messagebox.showerror("Tint Map Settings", str(exc))
+            return
+        records = self._tintmap_tree_records()
+        index = self.tintmap_preset_tree.index(selected[0])
+        records[index] = record
+        self._save_tintmap_preset_rows(records, selected_index=index)
+
+    def _delete_tintmap_presets(self):
+        selected = self.tintmap_preset_tree.selection()
+        if not selected:
+            messagebox.showwarning(
+                "Tint Map Settings", "Select at least one table entry to delete."
+            )
+            return
+        if not messagebox.askyesno(
+            "Tint Map Settings", f"Delete {len(selected)} selected setting(s)?"
+        ):
+            return
+        selected_set = set(selected)
+        records = [
+            record for item, record in zip(
+                self.tintmap_preset_tree.get_children(""),
+                self._tintmap_tree_records(),
+            ) if item not in selected_set
+        ]
+        self._save_tintmap_preset_rows(records)
+
+    def _on_tintmap_preset_selected(self, _event=None):
+        selected = self.tintmap_preset_tree.selection()
+        if len(selected) != 1:
+            return
+        from_region, to_region, settings, comment = self.tintmap_preset_tree.item(
+            selected[0], "values"
+        )
+        self.tintmap_source_region_var.set(from_region)
+        self.tintmap_target_region_var.set(to_region)
+        self.tintmap_comment_var.set(comment)
+        if str(settings).startswith("Custom "):
+            self.tintmap_brightness_var.set("Custom")
+            self.tintmap_custom_offset_var.set(str(settings)[len("Custom "):].strip())
+        else:
+            self.tintmap_brightness_var.set(settings)
+            self.tintmap_custom_offset_var.set("0")
+        self._on_tintmap_brightness_changed()
 
     def _on_tintmap_brightness_changed(self, value=None):
         custom = (value or self.tintmap_brightness_var.get()) == "Custom"

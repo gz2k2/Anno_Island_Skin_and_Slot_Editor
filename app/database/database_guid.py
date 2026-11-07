@@ -12,9 +12,10 @@ GUID_LABELS = {
     "1000253": "Mine (Work Area 2)",
     "100419": "Mine (Work Area 1)",
     "614": "Mine Slot (NW)",
+    "618": "Mine Work Area (NW)",
     "116037": "Mine Slot (Arctic)",
-    "117741": "Riverslot",
-    "117742": "Riverslot - Work Area",
+    "117741": "Riverslot (Enbesa)",
+    "117742": "Riverslot Work Area (Enbesa)",
     "2144000100": "Riverslot (built in)",
-    "2144000101": "Riverslot - Work Area (built in)",    
+    "2144000101": "Riverslot Work Area (built in)",    
 }

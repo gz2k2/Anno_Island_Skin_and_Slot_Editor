@@ -85,8 +85,8 @@ class MaterialSetsTabMixin:
     def _ms_refresh_catalog(self):
         catalog = {}
         # Reuse the application's central material-set sources. Built-in files
-        # come from data/material_sets; the configured custom folder is appended
-        # afterwards and therefore overrides bundled files with the same stem.
+        # come from the Editor Mod package; the configured custom folder is
+        # appended afterwards and therefore overrides bundled files with the same stem.
         search_dirs = getattr(self, "_material_set_search_dirs", lambda: ())()
         for folder in search_dirs:
             folder = Path(folder)

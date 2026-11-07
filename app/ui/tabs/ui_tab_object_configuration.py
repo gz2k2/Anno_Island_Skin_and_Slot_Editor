@@ -427,6 +427,14 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
     def _hide_object_operation_status(popup):
         StatusWindowTemplate.close(popup)
 
+    def _show_object_table_message(self, number, dialog, title, text):
+        window = getattr(self, f"object_configuration_table{number}_window", None)
+        if PopupTemplate.window_exists(window):
+            dialog(title, text, parent=window)
+            PopupTemplate.safe_activate(window)
+        else:
+            dialog(title, text)
+
     def _paint_object_operation_status_before_work(self, popup):
         """Guarantee that a status popup is visible before blocking XML work."""
         if not StatusWindowTemplate.exists(popup):
@@ -2409,7 +2417,16 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 ):
                     self._density_save_progress_popup = False
                     self._xml_loading_finish(error)
-                messagebox.showerror('XML cache', error)
+                if operation.startswith('RD3D '):
+                    self._show_object_table_message(
+                        1, messagebox.showerror, 'XML cache', error
+                    )
+                elif operation == 'Saving':
+                    self._show_object_table_message(
+                        2, messagebox.showerror, 'XML cache', error
+                    )
+                else:
+                    messagebox.showerror('XML cache', error)
                 continue
             if self.tmc_ram_progress is not None:
                 self.tmc_ram_progress.set(1)
@@ -2455,10 +2472,18 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 self.tmc_ram_info.set(f"Saved: {saved} files | {changed} changes | {len(errors)} errors")
                 self.status_var.set(self.tmc_ram_info.get())
                 if errors:
-                    messagebox.showwarning('Objects Table (tmc)',
-                        f'Partial save: {saved} files saved. Failed files remain retryable.\n' + '\n'.join(errors[:10]))
+                    self._show_object_table_message(
+                        2,
+                        messagebox.showwarning,
+                        'Objects Table (tmc)',
+                        f'Partial save: {saved} files saved. Failed files remain retryable.\n'
+                        + '\n'.join(errors[:10]),
+                    )
                 else:
-                    messagebox.showinfo('Objects Table (tmc)', self.tmc_ram_info.get())
+                    self._show_object_table_message(
+                        2, messagebox.showinfo, 'Objects Table (tmc)',
+                        self.tmc_ram_info.get(),
+                    )
 
     def _load_object_configuration_table_2_data(self):
         # Once loaded, opening the editor never scans or parses XML again.
@@ -2471,18 +2496,27 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
 
     def _save_object_configuration_table_2(self, notify=True):
         if self.worker and self.worker.is_alive():
-            messagebox.showwarning('Objects Table (tmc)', 'A file operation is running. Save after it completes.')
+            self._show_object_table_message(
+                2, messagebox.showwarning, 'Objects Table (tmc)',
+                'A file operation is running. Save after it completes.',
+            )
             return False
         if self._tmc_ram_is_busy():
             return False
         cache = self.tmc_ram_cache
         if cache is None or cache.folder != Path(self.tmc_data_meshes_var.get().strip()):
-            messagebox.showerror('Objects Table (tmc)', 'Load the current island XML cache first.')
+            self._show_object_table_message(
+                2, messagebox.showerror, 'Objects Table (tmc)',
+                'Load the current island XML cache first.',
+            )
             return False
         # Read Tk variables once on the UI thread. The worker receives strings.
         values = [row[4].get().strip() for row in self.object_configuration_table2_rows]
         if any(not value for value in values):
-            messagebox.showerror('Objects Table (tmc)', 'Filename must not be empty.')
+            self._show_object_table_message(
+                2, messagebox.showerror, 'Objects Table (tmc)',
+                'Filename must not be empty.',
+            )
             return False
         return self._tmc_ram_begin('Saving', lambda progress: cache.save(values, progress))
 
@@ -2633,7 +2667,10 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         else:
             self.tmc_ram_info.set(f'Objects Table (rd3d) saved: {result} changed paths')
             self.status_var.set(self.tmc_ram_info.get())
-            messagebox.showinfo('Objects Table (rd3d)', self.tmc_ram_info.get())
+            self._show_object_table_message(
+                1, messagebox.showinfo, 'Objects Table (rd3d)',
+                self.tmc_ram_info.get(),
+            )
             # Do not rebuild Tk variables: edits made after the Save click must
             # remain visible and can be saved with the next snapshot.
             if self.rd3d_ram_cache.path != Path(self.rd3d_file_var.get().strip()):
@@ -2649,15 +2686,24 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
 
     def _save_object_configuration_table_1(self, notify=True):
         if self._tmc_ram_is_busy() or (self.worker and self.worker.is_alive()):
-            messagebox.showwarning('Objects Table (rd3d)', 'A file operation is in progress.')
+            self._show_object_table_message(
+                1, messagebox.showwarning, 'Objects Table (rd3d)',
+                'A file operation is in progress.',
+            )
             return False
         cache = self.rd3d_ram_cache
         if cache is None or cache.path != Path(self.rd3d_file_var.get().strip()):
-            messagebox.showerror('Objects Table (rd3d)', 'Load the current RD3D cache first.')
+            self._show_object_table_message(
+                1, messagebox.showerror, 'Objects Table (rd3d)',
+                'Load the current RD3D cache first.',
+            )
             return False
         values = [row[2].get().strip() for row in self.object_configuration_table1_rows]
         if any(not value for value in values):
-            messagebox.showerror('Objects Table (rd3d)', 'Path must not be empty.')
+            self._show_object_table_message(
+                1, messagebox.showerror, 'Objects Table (rd3d)',
+                'Path must not be empty.',
+            )
             return False
         return self._tmc_ram_begin('RD3D Saving', lambda progress: cache.save(values, progress))
 

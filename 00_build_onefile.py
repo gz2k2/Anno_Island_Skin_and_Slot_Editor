@@ -22,7 +22,6 @@ ICON_FILE = None
 
 # Bundled read-only resources.
 DATA_DIRS = (
-    "data/material_sets",
     "data/xml",
     "data/gamedata",
 )
@@ -39,6 +38,7 @@ HIDDEN_IMPORTS = (
     "app.backend.backend_patch_store",
     "app.config.config_colors",
     "app.config.config_gamedata",
+    "app.config.config_rivercolor",
     "app.config.config_platform",
     "app.config.config_rd3d",
     "app.config.config_slot",

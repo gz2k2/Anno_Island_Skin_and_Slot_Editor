@@ -76,8 +76,24 @@ class FinalizeTabMixin:
         ctk.CTkLabel(
             export_row,
             text=(
-                "Exports the selected Material Set, used custom object files and, "
-                "when Integrated River Slot GUIDs are used, the bundled Riverslots content."
+                "Exports used Custom Content > Objects files and material sets "
+                "from the configured Custom Material Sets Folder."
+            ),
+            text_color="gray70", justify="left", anchor="w", wraplength=620,
+        ).pack(side="left", padx=(12, 0))
+
+        editor_mod_export_row = ctk.CTkFrame(option_left, fg_color="transparent")
+        editor_mod_export_row.pack(anchor="w", pady=(8, 0))
+        self.finalize_export_editor_mod_btn = ctk.CTkButton(
+            editor_mod_export_row, text="Export Editor Mod Files", width=230,
+            command=self._export_editor_mod_files,
+        )
+        self.finalize_export_editor_mod_btn.pack(side="left")
+        ctk.CTkLabel(
+            editor_mod_export_row,
+            text=(
+                'These files are copied to the Anno 1800 "Mod" folder. '
+                "They are required for the islands to function."
             ),
             text_color="gray70", justify="left", anchor="w", wraplength=620,
         ).pack(side="left", padx=(12, 0))
@@ -100,7 +116,7 @@ class FinalizeTabMixin:
         )
         self.finalize_btn.grid(row=0, column=2, padx=5)
         self.finalize_export_map_btn = ctk.CTkButton(
-            controls, text="Export Map", width=120,
+            controls, text="Export Island", width=120,
             command=self._start_export_map,
         )
         self.finalize_export_map_btn.grid(row=0, column=3, padx=5)
@@ -426,64 +442,13 @@ class FinalizeTabMixin:
         ]
         return matches[0] if len(matches) == 1 else None
 
-    def _finalize_uses_integrated_riverslots(self):
-        """Return whether bundled Integrated RiverSlot content is required.
-
-        Inspect the current working tree and selected Gamedata files so the
-        requirement follows the GUIDs actually used by the project.
-        """
-        integrated = {"2144000100", "2144000101"}
-        tree = getattr(self, "_island_slot_ram_game_tree", None)
-        if tree is not None:
-            for node in tree.getroot().iter():
-                if str(getattr(node, "tag", "")).rsplit("}", 1)[-1].lower() == "guid":
-                    if (node.text or "").strip() in integrated:
-                        return True
-        candidates = []
-        value = getattr(self, "gamedata_file_var", None)
-        if value is not None and value.get().strip():
-            path = Path(value.get().strip())
-            candidates.extend((path.with_name(path.stem + "_patched.xml"), path))
-        for path in candidates:
-            if not path.is_file():
-                continue
-            try:
-                data = path.read_bytes()
-            except OSError:
-                continue
-            compact = b"".join(data.lower().split())
-            if any((b"<guid>" + guid.encode("ascii") + b"</guid>") in compact
-                   for guid in integrated):
-                return True
-        return False
-
     def _export_finalize_custom_content(self):
-        """Export the selected material set and currently used custom object files."""
+        """Export used custom object files and configured custom material sets."""
         if self._busy():
             return
 
         export_items = []
         missing = []
-
-        selected = self.regional_material_set_dropdown_var.get().strip()
-        if selected and selected not in {
-            'Select XML...', 'No XML files found', 'No material set files found'
-        }:
-            source = self._find_material_set_dropdown_file(selected)
-            if source is None or not Path(source).is_file():
-                missing.append(f'Material Set: {selected}')
-            else:
-                source = Path(source)
-                export_items.append((
-                    source,
-                    Path('data/config/engine/material_sets') / f'{source.stem}.materialset',
-                    'Material Set',
-                ))
-                export_items.append((
-                    None,
-                    Path('data/config/engine/material_sets') / f'{source.stem}.xml.lnk',
-                    f'data/config/engine/material_sets/{source.stem}.materialset',
-                ))
 
         custom_rows = load_custom_objects(self.CONFIG_FILE)
         custom_by_path = {
@@ -512,25 +477,41 @@ class FinalizeTabMixin:
                     relative = Path(source.name)
                 export_items.append((source, Path('custom_objects') / relative, 'Custom Object'))
 
-        if self._finalize_uses_integrated_riverslots():
-            gamedata_root = Path(self.BUNDLE_DIR) / 'data' / 'gamedata'
-            riverslots_source = next(
-                (path for path in gamedata_root.iterdir()
-                 if path.is_dir() and path.name.casefold() == 'riverslots'),
-                gamedata_root / 'riverslots',
-            ) if gamedata_root.is_dir() else gamedata_root / 'riverslots'
-            if not riverslots_source.is_dir():
-                missing.append(f'Integrated Riverslots content folder: {riverslots_source}')
-            else:
-                for source in sorted(
-                    (path for path in riverslots_source.rglob('*') if path.is_file()),
-                    key=lambda path: str(path.relative_to(riverslots_source)).casefold(),
-                ):
-                    export_items.append((
-                        source,
-                        source.relative_to(riverslots_source),
-                        'Integrated Riverslots',
-                    ))
+        custom_material_sets_text = self.custom_material_sets_folder_var.get().strip()
+        custom_material_sets_folder = (
+            Path(custom_material_sets_text).expanduser()
+            if custom_material_sets_text else None
+        )
+        if (custom_material_sets_folder is not None
+                and not custom_material_sets_folder.is_dir()):
+            missing.append('Custom Material Sets Folder does not exist.')
+        elif custom_material_sets_folder is not None:
+            material_sets_by_stem = {}
+            for source in sorted(
+                custom_material_sets_folder.iterdir(),
+                key=lambda path: path.name.casefold(),
+            ):
+                suffix = source.suffix.casefold()
+                if not source.is_file() or suffix not in {'.materialset', '.xml'}:
+                    continue
+                key = source.stem.casefold()
+                current = material_sets_by_stem.get(key)
+                if current is None or suffix == '.materialset':
+                    material_sets_by_stem[key] = source
+
+            material_sets_dir = Path('data/config/engine/material_sets')
+            for source in sorted(
+                material_sets_by_stem.values(),
+                key=lambda path: path.stem.casefold(),
+            ):
+                materialset_relative = material_sets_dir / f'{source.stem}.materialset'
+                link_relative = material_sets_dir / f'{source.stem}.xml.lnk'
+                export_items.append((source, materialset_relative, 'Custom Material Set'))
+                export_items.append((
+                    None,
+                    link_relative,
+                    materialset_relative.as_posix(),
+                ))
 
         if missing:
             messagebox.showerror(
@@ -542,7 +523,7 @@ class FinalizeTabMixin:
         if not export_items:
             messagebox.showinfo(
                 'Export Custom Content Files',
-                'No selected Material Set or used Custom Content > Objects files were found.',
+                'No used Custom Content > Objects files or custom material sets were found.',
             )
             return
 
@@ -581,6 +562,72 @@ class FinalizeTabMixin:
         messagebox.showinfo(
             'Export Custom Content Files',
             f'Files exported: {len(exported)}\n\n{details}',
+        )
+
+    def _export_editor_mod_files(self):
+        """Copy the bundled Island Editor mod package into Anno 1800's Mod folder."""
+        if self._busy():
+            return
+
+        mod_folder_text = self.mod_folder_var.get().strip()
+        mod_folder = Path(mod_folder_text).expanduser() if mod_folder_text else None
+        if mod_folder is None or not mod_folder.is_dir():
+            messagebox.showerror(
+                'Export Editor Mod Files',
+                "Please configure an existing Anno 1800 'Mod' folder in Settings.",
+            )
+            return
+
+        source = (
+            Path(self.BUNDLE_DIR) / 'data' / 'gamedata'
+            / '[IslandEditor] ModFiles [gz2k2]'
+        )
+        if not source.is_dir():
+            messagebox.showerror(
+                'Export Editor Mod Files',
+                f'Bundled Editor Mod Files were not found:\n{source}',
+            )
+            return
+
+        target = mod_folder / source.name
+        if source.resolve() == target.resolve():
+            messagebox.showerror(
+                'Export Editor Mod Files',
+                'The selected Mod folder is the bundled source folder.',
+            )
+            return
+        if target.exists() and not target.is_dir():
+            messagebox.showerror(
+                'Export Editor Mod Files',
+                f'The target exists but is not a folder:\n{target}',
+            )
+            return
+
+        existing = []
+        if target.is_dir():
+            existing = [
+                path for path in source.rglob('*')
+                if path.is_file() and (target / path.relative_to(source)).exists()
+            ]
+        if existing and not messagebox.askyesno(
+            'Export Editor Mod Files',
+            f'{len(existing)} existing file(s) will be overwritten in:\n{target}\n\nContinue?',
+        ):
+            return
+
+        try:
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        except (OSError, shutil.Error) as exc:
+            messagebox.showerror(
+                'Export Editor Mod Files', f'Export failed:\n{exc}'
+            )
+            return
+
+        exported_count = sum(1 for path in source.rglob('*') if path.is_file())
+        self.status_var.set(f'Editor Mod Files exported: {exported_count} file(s)')
+        messagebox.showinfo(
+            'Export Editor Mod Files',
+            f'Files copied: {exported_count}\n\n{target}',
         )
 
     def _ask_export_map_name(self, default_name):

@@ -19,7 +19,12 @@ from app.functions.function_custom_content import (
     load_custom_objects,
     invalidate_custom_content_cache,
 )
-from app.config.config_slot import configure_custom_river_guids
+from app.config.config_slot import configure_custom_river_guids, configure_custom_slots
+from app.functions.function_custom_slots import (
+    load_custom_slots,
+    save_custom_slots,
+    validate_custom_slots,
+)
 from app.functions.function_custom_river_slots import (
     load_custom_river_slots,
     save_custom_river_slots,
@@ -42,23 +47,35 @@ class CustomContentTabMixin:
             command=self._open_custom_objects,
         ).grid(row=1, column=0, padx=20, pady=(0, 12), sticky="w")
         ctk.CTkButton(
-            tab, text="River Slots", width=160,
-            command=self._open_custom_river_slots,
+            tab, text="Slots", width=160,
+            command=self._open_custom_slots,
         ).grid(row=1, column=0, padx=(190, 20), pady=(0, 12), sticky="w")
 
-    def _open_custom_river_slots(self):
-        """Edit named River Slot GUID pairs and save them to user configuration."""
-        existing = getattr(self, "_custom_river_slots_window", None)
+    def _open_custom_slots(self):
+        """Edit and persist named single Slots and River Slots."""
+        existing = getattr(self, "_custom_slots_window", None)
         if existing is not None and existing.winfo_exists():
             existing.deiconify()
             existing.lift()
             PopupTemplate.request_focus(existing, delay_ms=60)
             return
         try:
-            rows = load_custom_river_slots(self.CONFIG_FILE)
+            river_rows = load_custom_river_slots(self.CONFIG_FILE)
+            rows = [
+                {"name": row["name"], "type": "Slot", "guid": row["guid"], "work_area_guid": ""}
+                for row in load_custom_slots(self.CONFIG_FILE)
+            ]
+            rows.extend(
+                {
+                    "name": row["name"], "type": "River Slot",
+                    "guid": row["river_slot_guid"],
+                    "work_area_guid": row["work_area_guid"],
+                }
+                for row in river_rows
+            )
         except (OSError, ValueError, UnicodeError) as exc:
             messagebox.showerror(
-                "River Slots", f"Could not load River Slots:\n{exc}", parent=self,
+                "Slots", f"Could not load Slots:\n{exc}", parent=self,
             )
             return
 
@@ -69,16 +86,16 @@ class CustomContentTabMixin:
             """Ask before discarding unsaved changes."""
             if state["dirty"]:
                 return messagebox.askyesno(
-                    "River Slots", "Discard unsaved changes and close?", parent=window,
+                    "Slots", "Discard unsaved changes and close?", parent=window,
                 )
             return True
 
         built = PopupTemplate.create_window(
-            self, title="River Slots", geometry="900x560", min_size=(700, 420),
+            self, title="Slots", geometry="1000x600", min_size=(760, 460),
             close_command=close_requested, add_header=False,
         )
         window = built["window"]
-        self._custom_river_slots_window = window
+        self._custom_slots_window = window
         window.transient(self)
         PopupTemplate.apply_native_titlebar_controls(window)
         window.grid_columnconfigure(0, weight=1)
@@ -86,37 +103,62 @@ class CustomContentTabMixin:
 
         inputs = ctk.CTkFrame(window, fg_color="transparent")
         inputs.grid(row=0, column=0, padx=20, pady=(20, 12), sticky="ew")
-        fields = (
-            ("name", "Name", 1),
-            ("river_slot_guid", "RiverSlot GUID", 1),
-            ("work_area_guid", "RiverSlot - Work Area GUID", 2),
-        )
+        fields = ("name", "type", "guid", "work_area_guid")
+        labels = {
+            "name": "Name",
+            "type": "Slot Type",
+            "guid": "GUID",
+            "work_area_guid": "GUID Work Area",
+        }
         variables = {}
-        for column, (key, title, weight) in enumerate(fields):
-            inputs.grid_columnconfigure(column, weight=weight)
-            ctk.CTkLabel(inputs, text=title).grid(
+        for column, key in enumerate(fields):
+            inputs.grid_columnconfigure(column, weight=1)
+            label = ctk.CTkLabel(inputs, text=labels[key])
+            label.grid(
                 row=0, column=column, padx=(0, 10), sticky="w",
             )
             variable = tk.StringVar(master=window)
             variables[key] = variable
-            ctk.CTkEntry(inputs, textvariable=variable).grid(
-                row=1, column=column, padx=(0, 10), sticky="ew",
-            )
+            if key == "type":
+                widget = ctk.CTkOptionMenu(
+                    inputs, variable=variable, values=("Slot", "River Slot"),
+                    dynamic_resizing=False,
+                )
+            else:
+                widget = ctk.CTkEntry(inputs, textvariable=variable)
+            widget.grid(row=1, column=column, padx=(0, 10), sticky="ew")
+            if key == "work_area_guid":
+                self._custom_slots_workarea_label = label
+                self._custom_slots_workarea_entry = widget
+
+        variables["type"].set("Slot")
+
+        def update_guid_fields(*_args):
+            if variables["type"].get() == "River Slot":
+                self._custom_slots_workarea_label.grid()
+                self._custom_slots_workarea_entry.grid()
+            else:
+                self._custom_slots_workarea_label.grid_remove()
+                self._custom_slots_workarea_entry.grid_remove()
+
+        variables["type"].trace_add("write", update_guid_fields)
+        update_guid_fields()
 
         table_frame = ctk.CTkFrame(window)
         table_frame.grid(row=1, column=0, padx=20, pady=(0, 12), sticky="nsew")
         table_frame.grid_columnconfigure(0, weight=1)
         table_frame.grid_rowconfigure(0, weight=1)
-        columns = tuple(variables)
+        columns = fields
         headings = {
             "name": "Name",
-            "river_slot_guid": "RiverSlot GUID",
-            "work_area_guid": "RiverSlot - Work Area GUID",
+            "type": "Type",
+            "guid": "GUID",
+            "work_area_guid": "GUID Workarea",
         }
         table = TreeviewTemplate.create(
             table_frame, columns=columns, headings=headings,
-            min_widths={"name": 160, "river_slot_guid": 130, "work_area_guid": 190},
-            max_widths={"name": 320, "river_slot_guid": 500, "work_area_guid": 600},
+            min_widths={"name": 130, "type": 100, "guid": 110, "work_area_guid": 140},
+            max_widths={"name": 320, "type": 180, "guid": 240, "work_area_guid": 300},
             stretch=(), dynamic_width=True, width_padding=28,
             selectmode="browse",
         )
@@ -129,7 +171,7 @@ class CustomContentTabMixin:
         for row in rows:
             insert_record(row)
 
-        info = tk.StringVar(master=window, value=f"{len(rows)} River Slot(s)")
+        info = tk.StringVar(master=window, value=f"{len(rows)} Slot(s)")
 
         def table_rows():
             """Return the table contents as records in display order."""
@@ -141,7 +183,7 @@ class CustomContentTabMixin:
         def changed():
             """Mark edits as unsaved and update the status line."""
             state["dirty"] = True
-            info.set(f"{len(tree.get_children(''))} River Slot(s) | Unsaved changes")
+            info.set(f"{len(tree.get_children(''))} Slot(s) | Unsaved changes")
 
         def selection_changed(_event=None):
             """Copy the selected row to the input fields for editing."""
@@ -151,20 +193,67 @@ class CustomContentTabMixin:
             values = tree.item(selected[0], "values")
             for key, value in zip(columns, values):
                 variables[key].set(value)
+            update_guid_fields()
 
         tree.bind("<<TreeviewSelect>>", selection_changed, add="+")
 
         def validate_rows(records):
             """Show validation errors while keeping invalid edits in the form."""
             try:
-                return validate_custom_river_slots(records)
+                names = [str(record.get("name", "")).strip().casefold() for record in records]
+                if len(names) != len(set(names)):
+                    raise ValueError("Slot names must be unique.")
+                single_records = [
+                    {"name": record.get("name", ""), "guid": record.get("guid", "")}
+                    for record in records if record.get("type") == "Slot"
+                ]
+                river_records = [
+                    {
+                        "name": record.get("name", ""),
+                        "river_slot_guid": record.get("guid", ""),
+                        "work_area_guid": record.get("work_area_guid", ""),
+                    }
+                    for record in records if record.get("type") == "River Slot"
+                ]
+                if len(single_records) + len(river_records) != len(records):
+                    raise ValueError("Select Slot Type 'Slot' or 'River Slot'.")
+                river_guids = [
+                    guid
+                    for record in river_records
+                    for guid in (record["river_slot_guid"], record["work_area_guid"])
+                ]
+                singles = validate_custom_slots(single_records, reserved_guids=river_guids)
+                rivers = validate_custom_river_slots(
+                    river_records,
+                    additional_reserved_guids=[record["guid"] for record in singles],
+                )
+                normalized_singles = {record["name"].casefold(): record for record in singles}
+                normalized_rivers = {record["name"].casefold(): record for record in rivers}
+                return [
+                    (
+                        {"name": normalized_singles[record["name"].strip().casefold()]["name"],
+                         "type": "Slot",
+                         "guid": normalized_singles[record["name"].strip().casefold()]["guid"],
+                         "work_area_guid": ""}
+                        if record["type"] == "Slot"
+                        else {
+                            "name": normalized_rivers[record["name"].strip().casefold()]["name"],
+                            "type": "River Slot",
+                            "guid": normalized_rivers[record["name"].strip().casefold()]["river_slot_guid"],
+                            "work_area_guid": normalized_rivers[record["name"].strip().casefold()]["work_area_guid"],
+                        }
+                    )
+                    for record in records
+                ]
             except ValueError as exc:
-                messagebox.showwarning("River Slots", str(exc), parent=window)
+                messagebox.showwarning("Slots", str(exc), parent=window)
                 return None
 
         def add():
             """Append the form values after validating the complete table."""
             record = {key: variable.get().strip() for key, variable in variables.items()}
+            if record["type"] == "Slot":
+                record["work_area_guid"] = ""
             records = validate_rows(table_rows() + [record])
             if records is None:
                 return
@@ -178,9 +267,11 @@ class CustomContentTabMixin:
             """Replace the selected row after validating the complete table."""
             selected = tree.selection()
             if len(selected) != 1:
-                messagebox.showwarning("River Slots", "Select one entry to change.", parent=window)
+                messagebox.showwarning("Slots", "Select one entry to change.", parent=window)
                 return
             record = {key: variable.get().strip() for key, variable in variables.items()}
+            if record["type"] == "Slot":
+                record["work_area_guid"] = ""
             records = table_rows()
             index = tree.index(selected[0])
             records[index] = record
@@ -195,7 +286,7 @@ class CustomContentTabMixin:
             """Delete selected River Slot rows from the pending table."""
             selected = tree.selection()
             if not selected:
-                messagebox.showwarning("River Slots", "Select at least one entry to delete.", parent=window)
+                messagebox.showwarning("Slots", "Select at least one entry to delete.", parent=window)
                 return
             tree.delete(*selected)
             for variable in variables.values():
@@ -203,24 +294,38 @@ class CustomContentTabMixin:
             changed()
 
         def save():
-            """Persist table contents and register the GUID pairs at runtime."""
+            """Persist both slot types and register them at runtime."""
             records = validate_rows(table_rows())
             if records is None:
                 return
+            single_records = [
+                {"name": row["name"], "guid": row["guid"]}
+                for row in records if row["type"] == "Slot"
+            ]
+            river_records = [
+                {
+                    "name": row["name"], "river_slot_guid": row["guid"],
+                    "work_area_guid": row["work_area_guid"],
+                }
+                for row in records if row["type"] == "River Slot"
+            ]
             try:
-                path = save_custom_river_slots(self.CONFIG_FILE, records)
+                single_path = save_custom_slots(self.CONFIG_FILE, single_records)
+                river_path = save_custom_river_slots(self.CONFIG_FILE, river_records)
             except (OSError, ValueError, UnicodeError) as exc:
-                messagebox.showerror("River Slots", f"Could not save River Slots:\n{exc}", parent=window)
+                messagebox.showerror("Slots", f"Could not save Slots:\n{exc}", parent=window)
                 return
-            configure_custom_river_guids(records)
+            configure_custom_river_guids(river_records)
+            configure_custom_slots(single_records)
             slot_map_window = getattr(self, "slot_map_window", None)
+            self._slot_map_prepare_custom_slots()
             if slot_map_window is not None and slot_map_window.winfo_exists():
                 self._slot_map_rebuild_legend()
             state["dirty"] = False
-            info.set(f"{len(records)} River Slot(s) | Saved: {path}")
+            info.set(f"{len(records)} Slot(s) | Saved: {single_path.name}, {river_path.name}")
 
         actions = ctk.CTkFrame(inputs, fg_color="transparent")
-        actions.grid(row=2, column=0, columnspan=3, pady=(10, 0), sticky="e")
+        actions.grid(row=2, column=0, columnspan=4, pady=(10, 0), sticky="e")
         ctk.CTkButton(actions, text="Add", width=90, command=add).pack(side="left", padx=(0, 8))
         ctk.CTkButton(actions, text="Change", width=90, command=change).pack(side="left")
 

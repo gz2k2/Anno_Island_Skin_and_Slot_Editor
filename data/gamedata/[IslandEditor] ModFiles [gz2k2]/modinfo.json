@@ -1,0 +1,48 @@
+{
+  "Version": "1.0.0",
+  "ModID": "island-editor-mod-files-gz2k2",
+  "IncompatibleIds": [],
+  "LoadAfterIds": [],
+  "Category": {
+    "Chinese": "共享",
+    "English": "Shared",
+    "French": "Partagé",
+    "German": "Shared",
+    "Italian": "Condiviso",
+    "Japanese": "シェアード",
+    "Korean": "공유",
+    "Polish": "Udostępnionych",
+    "Russian": "Совместный",
+    "Spanish": "Compartido",
+    "Taiwanese": "共用"
+  },
+  "ModName": {
+    "Chinese": "[IslandEditor] ModFiles[gz2k2]",
+    "English": "[IslandEditor] ModFiles[gz2k2]",
+    "French": "[IslandEditor] ModFiles[gz2k2]",
+    "German": "[IslandEditor] ModFiles[gz2k2]",
+    "Italian": "[IslandEditor] ModFiles[gz2k2]",
+    "Japanese": "[IslandEditor] ModFiles[gz2k2]",
+    "Korean": "[IslandEditor] ModFiles[gz2k2]",
+    "Polish": "[IslandEditor] ModFiles[gz2k2]",
+    "Russian": "[IslandEditor] ModFiles[gz2k2]",
+    "Spanish": "[IslandEditor] ModFiles[gz2k2]",
+    "Taiwanese": "[IslandEditor] ModFiles[gz2k2]"
+  },
+  "Description": {
+    "Chinese": "[IslandEditor] ModFiles[gz2k2]",
+    "English": "[IslandEditor] ModFiles[gz2k2]",
+    "French": "[IslandEditor] ModFiles[gz2k2]",
+    "German": "[IslandEditor] ModFiles[gz2k2]",
+    "Italian": "[IslandEditor] ModFiles[gz2k2]",
+    "Japanese": "[IslandEditor] ModFiles[gz2k2]",
+    "Korean": "[IslandEditor] ModFiles[gz2k2]",
+    "Polish": "[IslandEditor] ModFiles[gz2k2]",
+    "Russian": "[IslandEditor] ModFiles[gz2k2]",
+    "Spanish": "[IslandEditor] ModFiles[gz2k2]",
+    "Taiwanese": "[IslandEditor] ModFiles[gz2k2]"
+  },
+  "CreatorName": "gz2k2",
+  "CreatorContact": "https://www.github.com/gz2k2",
+  "Image": null
+}

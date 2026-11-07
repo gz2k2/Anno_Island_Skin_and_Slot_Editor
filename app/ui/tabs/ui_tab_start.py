@@ -49,11 +49,11 @@ class StartTabMixin:
         create_buttons = ctk.CTkFrame(source, fg_color="transparent")
         create_buttons.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 6), sticky="w")
         ctk.CTkButton(
-            create_buttons, text="Create from Original Maps", width=205,
+            create_buttons, text="Create from Original Islands", width=205,
             command=self._open_original_maps_popup,
         ).pack(side="left", padx=(0, 8))
         ctk.CTkButton(
-            create_buttons, text="Create from CustomFolder", width=185,
+            create_buttons, text="Create from Custom Folder", width=185,
             command=self._open_custom_map_folder,
         ).pack(side="left")
 

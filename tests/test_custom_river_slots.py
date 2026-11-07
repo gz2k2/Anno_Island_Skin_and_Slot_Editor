@@ -29,7 +29,7 @@ class CustomRiverSlotTests(unittest.TestCase):
             config_file = Path(directory) / "config.ini"
             path = save_custom_river_slots(config_file, rows)
             self.assertEqual(rows, load_custom_river_slots(config_file))
-            self.assertEqual("custom_river_slots.json", path.name)
+            self.assertEqual("config_custom_riverslots.json", path.name)
 
     def test_missing_file_loads_empty_list(self):
         """Treat a not-yet-created user data file as an empty list."""
@@ -61,10 +61,34 @@ class CustomRiverSlotTests(unittest.TestCase):
         """Reject user data written with an unsupported schema version."""
         with tempfile.TemporaryDirectory() as directory:
             config_file = Path(directory) / "config.ini"
-            path = Path(directory) / "custom_river_slots.json"
+            path = Path(directory) / "config_riverslots.json"
             path.write_text(json.dumps({"schema": 2, "river_slots": []}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "Unsupported"):
                 load_custom_river_slots(config_file)
+
+    def test_legacy_filename_is_migrated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_file = Path(directory) / "config.ini"
+            legacy_path = Path(directory) / "config_riverslots.json"
+            legacy_path.write_text(
+                json.dumps({"schema": 1, "river_slots": []}), encoding="utf-8"
+            )
+
+            self.assertEqual([], load_custom_river_slots(config_file))
+            self.assertTrue((Path(directory) / "config_custom_riverslots.json").is_file())
+            self.assertFalse(legacy_path.exists())
+
+    def test_old_legacy_filename_is_also_migrated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_file = Path(directory) / "config.ini"
+            legacy_path = Path(directory) / "custom_river_slots.json"
+            legacy_path.write_text(
+                json.dumps({"schema": 1, "river_slots": []}), encoding="utf-8"
+            )
+
+            self.assertEqual([], load_custom_river_slots(config_file))
+            self.assertTrue((Path(directory) / "config_custom_riverslots.json").is_file())
+            self.assertFalse(legacy_path.exists())
 
     def test_custom_pairs_are_registered_for_slot_processing(self):
         """Expose registered pairs through the shared slot-family registry."""

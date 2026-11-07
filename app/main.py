@@ -54,6 +54,8 @@ except ImportError as exc:
         "config_gamedata.py is missing. Place it in the same folder as the application/script."
     ) from exc
 
+from app.config.config_rivercolor import RIVER_COLOR_OPTIONS
+
 
 try:
     from app.config.config_rd3d import RD3D_CATEGORIES, DEFAULT_RD3D_CATEGORY, rd3d_category_for_object
@@ -145,8 +147,16 @@ class CancelledError(RuntimeError):
     pass
 
 
-from app.config.config_slot import configure_custom_river_guids, configure_personal_river_guids
-from app.functions.function_custom_river_slots import load_custom_river_slots
+from app.config.config_slot import (
+    configure_custom_river_guids,
+    configure_custom_slots,
+    configure_personal_river_guids,
+)
+from app.functions.function_custom_river_slots import (
+    load_custom_river_slots,
+    validate_custom_river_slots,
+)
+from app.functions.function_custom_slots import load_custom_slots, validate_custom_slots
 
 class App(RegionDetectionMixin, UIMixin, ctk.CTk):
     # Constants required by the decoupled UI layer.
@@ -180,6 +190,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         self.tmc_format_var = tk.StringVar(value=str(BUNDLED_XML_FORMATS["tmc"]))
         self.tmc_parallel_var = tk.StringVar(value="4")
         self.gamefiles_var = tk.StringVar()
+        self.mod_folder_var = tk.StringVar()
         self.island_export_custom_var = tk.StringVar()
         self.island_export_create_links_var = tk.BooleanVar(value=True)
         self.original_maps_var = tk.StringVar()
@@ -208,6 +219,9 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         self.vegetation_prop_set_var = tk.StringVar(value="-")
         self.new_global_ambient_var = tk.StringVar(value=DEFAULT_GLOBAL_AMBIENT)
         self.new_vegetation_var = tk.StringVar(value=DEFAULT_VEGETATION_PROP_SET)
+        self.rivercolor_var = tk.StringVar(value="Not found")
+        self.new_rivercolor_var = tk.StringVar(value="Original")
+        self.new_rivercolor_custom_var = tk.StringVar(value="")
         self.rd3d_file_var = tk.StringVar()
         self.material_set_var = tk.StringVar(value="-")
         self.new_material_set_var = tk.StringVar()
@@ -421,6 +435,8 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
 
     def _update_gamedata_dropdowns_from_patched(self, original_path: Path):
         """Update New content dropdowns from gamedata_patched.xml when available."""
+        self.new_rivercolor_var.set("Original")
+        self.new_rivercolor_custom_var.set("")
         patched_path = Path(original_path).with_name("gamedata_patched.xml")
         if not patched_path.is_file():
             return
@@ -455,6 +471,44 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                     VEGETATION_PROP_SET_OPTIONS, vegetation, self.new_vegetation_var.get()
                 )
             )
+        try:
+            regional_patch = PATCH_STORE.scope(
+                original_path, "gamedata_regional", {})
+        except (OSError, ValueError):
+            regional_patch = {}
+        patched_rivercolor = regional_patch.get("rivercolor")
+        if patched_rivercolor is not None:
+            patched_rivercolor = str(patched_rivercolor)
+            selected = next(
+                (label for label, value in RIVER_COLOR_OPTIONS.items()
+                 if value == patched_rivercolor),
+                None,
+            )
+            if selected is None:
+                self.new_rivercolor_custom_var.set(patched_rivercolor)
+                selected = "Custom"
+            self.new_rivercolor_var.set(selected)
+
+    @staticmethod
+    def _gamedata_rivercolor_values(root):
+        """Return WaterColor values only from objects whose direct GUID is 1001608."""
+        values = []
+        for parent in root.iter():
+            for obj in parent:
+                guid = next((
+                    child for child in obj
+                    if isinstance(child.tag, str)
+                    and child.tag.rsplit("}", 1)[-1] == "guid"
+                ), None)
+                if guid is None or (guid.text or "").strip() != "1001608":
+                    continue
+                values.extend(
+                    (node.text or "").strip()
+                    for node in obj.iter()
+                    if isinstance(node.tag, str)
+                    and node.tag.rsplit("}", 1)[-1] == "WaterColor"
+                )
+        return values
 
     def _load_gamedata_xml(self, show_errors=True):
         self._xml_loading_depth += 1
@@ -475,6 +529,8 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         if not path.is_file():
             self.global_ambient_var.set("-")
             self.vegetation_prop_set_var.set("-")
+            self.rivercolor_var.set("-")
+            self.new_rivercolor_var.set("Original")
             if show_errors:
                 messagebox.showerror("Gamedata", "Please select an existing gamedata_original.xml file.")
             return False
@@ -492,12 +548,17 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                         values[tag].append(text)
             self.global_ambient_var.set("\n".join(values["GlobalAmbientName"]) or "Not found")
             self.vegetation_prop_set_var.set("\n".join(values["VegetationPropSetName"]) or "Not found")
+            self.rivercolor_var.set(
+                "\n".join(dict.fromkeys(self._gamedata_rivercolor_values(root)))
+                or "Not found"
+            )
             self._update_gamedata_dropdowns_from_patched(path)
             self.status_var.set(f"Gamedata loaded: {path.name}{repair_note}")
             return True
         except (ET.ParseError, OSError) as exc:
             self.global_ambient_var.set("Error while reading")
             self.vegetation_prop_set_var.set("Error while reading")
+            self.rivercolor_var.set("Error while reading")
             self.status_var.set(f"Gamedata blocked: {path.name} | {exc}")
             if show_errors:
                 if isinstance(exc, ET.ParseError):
@@ -564,7 +625,10 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             return False
         ambient = GLOBAL_AMBIENT_OPTIONS.get(self.new_global_ambient_var.get())
         vegetation = VEGETATION_PROP_SET_OPTIONS.get(self.new_vegetation_var.get())
-        if not ambient or not vegetation:
+        rivercolor_choice = self.new_rivercolor_var.get()
+        if (not ambient or not vegetation
+            or (rivercolor_choice not in RIVER_COLOR_OPTIONS
+                and rivercolor_choice != "Custom")):
             messagebox.showerror("Gamedata", "The selected values are invalid.")
             return False
         payload = {
@@ -573,6 +637,19 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
                 "VegetationPropSetName": vegetation,
             }
         }
+        if rivercolor_choice == "Custom":
+            custom_rivercolor = self.new_rivercolor_custom_var.get().strip()
+            try:
+                rivercolor = str(int(custom_rivercolor))
+            except ValueError:
+                messagebox.showerror(
+                    "Gamedata", "Custom Rivercolor must be a decimal integer."
+                )
+                return False
+        else:
+            rivercolor = RIVER_COLOR_OPTIONS[rivercolor_choice]
+        if rivercolor is not None:
+            payload["rivercolor"] = rivercolor
         try:
             PATCH_STORE.save_scope(
                 "gamedata", original, "gamedata_regional", payload)
@@ -588,9 +665,17 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         value = self.custom_material_sets_folder_var.get().strip()
         return Path(value).expanduser() if value else None
 
+    @staticmethod
+    def _bundled_material_sets_dir():
+        return (
+            BUNDLE_DIR / "data" / "gamedata"
+            / "[IslandEditor] ModFiles [gz2k2]" / "data" / "config"
+            / "engine" / "material_sets"
+        )
+
     def _material_set_search_dirs(self):
         """Bundled material sets plus the user-configured custom folder."""
-        folders = [BUNDLE_DIR / "data" / "material_sets"]
+        folders = [self._bundled_material_sets_dir()]
         custom_folder = self._custom_material_sets_dir()
         if custom_folder is not None:
             folders.append(custom_folder)
@@ -615,7 +700,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         custom_folder = self._custom_material_sets_dir()
         if custom_folder is not None:
             folders.append(custom_folder)
-        folders.append(BUNDLE_DIR / "data" / "material_sets")
+        folders.append(self._bundled_material_sets_dir())
         for folder in folders:
             for suffix in (".materialset", ".xml"):
                 candidate = folder / f"{filename}{suffix}"
@@ -1654,6 +1739,19 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
         self.gamefiles_var.set(str(folder))
         self._save_config()
         self.status_var.set(f"Gamefiles folder: {folder}")
+
+    def _select_mod_folder(self):
+        initial = self.mod_folder_var.get().strip()
+        value = filedialog.askdirectory(
+            title="Select Anno 1800 Mod folder",
+            initialdir=initial if initial and Path(initial).is_dir() else None,
+        )
+        if not value:
+            return
+        folder = Path(value)
+        self.mod_folder_var.set(str(folder))
+        if self._save_config():
+            self.status_var.set(f"Anno 1800 Mod folder: {folder}")
 
     def _export_rda_archives(self):
         maindata = Path(self.gamefiles_var.get().strip())
@@ -3380,6 +3478,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             self.fdb_var.set(paths.get("file_db_reader", ""))
             self._autodetect_tools()
             self.gamefiles_var.set(paths.get("gamefiles", ""))
+            self.mod_folder_var.set(paths.get("mod_folder", ""))
             self.island_export_custom_var.set(paths.get("island_export_custom", ""))
             self.original_maps_var.set(paths.get("original_maps", ""))
             self.default_custom_maps_var.set(paths.get("temporary_map_folder", paths.get("default_custom_maps", "")))
@@ -3406,6 +3505,7 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             "rda_console": self.rda_var.get().strip(),
             "file_db_reader": self.fdb_var.get().strip(),
             "gamefiles": self.gamefiles_var.get().strip(),
+            "mod_folder": self.mod_folder_var.get().strip(),
             "island_export_custom": self.island_export_custom_var.get().strip(),
             "original_maps": self.original_maps_var.get().strip(),
             "default_custom_maps": self.default_custom_maps_var.get().strip(),
@@ -3434,17 +3534,31 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             return False
 
     def _configure_selected_river_guids(self):
-        """Register the global River Slot pair and saved named River Slots."""
+        """Register global and user-defined single and paired Slot GUIDs."""
         configure_personal_river_guids("2144000100", "2144000101")
         try:
-            custom_slots = load_custom_river_slots(CONFIG_FILE)
+            custom_slots = load_custom_slots(CONFIG_FILE)
+            river_slots = load_custom_river_slots(CONFIG_FILE)
+            custom_slots = validate_custom_slots(
+                custom_slots,
+                reserved_guids=(
+                    guid
+                    for row in river_slots
+                    for guid in (row["river_slot_guid"], row["work_area_guid"])
+                ),
+            )
+            river_slots = validate_custom_river_slots(
+                river_slots,
+                additional_reserved_guids=(row["guid"] for row in custom_slots),
+            )
         except (OSError, ValueError, UnicodeError) as exc:
-            custom_slots = []
+            custom_slots, river_slots = [], []
             messagebox.showwarning(
-                "River Slots", f"Custom River Slots could not be loaded:\n{exc}",
+                "Slots", f"Custom Slots could not be loaded:\n{exc}",
                 parent=self,
             )
-        configure_custom_river_guids(custom_slots)
+        configure_custom_slots(custom_slots)
+        configure_custom_river_guids(river_slots)
 
     def _experimental_enabled(self):
         """Return whether UI/features explicitly marked experimental are enabled."""
