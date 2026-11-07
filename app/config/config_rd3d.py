@@ -99,9 +99,9 @@ RD3D_CATEGORIES = {
         'data/graphics/props/terrain_props/vegetation/bushes/bush_moderate_03_small.prp',
     ),
     'Flowers Enbesa': (
-        'data\dlc06\graphics\props\terrain_props\vegetation\grass\flowers_savanna_01.prp',
-        'data\dlc06\graphics\props\terrain_props\vegetation\grass\flowers_savanna_02.prp',
-        'data\dlc06\graphics\props\terrain_props\vegetation\grass\flowers_savanna_03.prp',
+        'data/dlc06/graphics/props/terrain_props/vegetation/grass/flowers_savanna_01.prp',
+        'data/dlc06/graphics/props/terrain_props/vegetation/grass/flowers_savanna_02.prp',
+        'data/dlc06/graphics/props/terrain_props/vegetation/grass/flowers_savanna_03.prp',
 
     ),
     'Flowers Jungle': (
