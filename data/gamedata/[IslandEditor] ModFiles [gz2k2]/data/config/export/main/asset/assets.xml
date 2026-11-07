@@ -1,0 +1,10 @@
+<ModOps>
+
+<!-- Add Arctic Gas Deposit Slot to normal Islands -->
+  <ModOp Type="add" GUID="116032" Path="/Values/MineSlotResourceSet/MineSlots">
+    <Item>
+      <MineSlot>112691</MineSlot>
+    </Item>
+  </ModOp>
+
+</ModOps>
