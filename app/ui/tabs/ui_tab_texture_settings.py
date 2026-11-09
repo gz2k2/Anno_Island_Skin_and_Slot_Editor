@@ -3,13 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from queue import Empty, Queue
 import threading
+import math
 import tkinter as tk
 from tkinter import messagebox
 
 import customtkinter as ctk
 
 from app.functions.functions_tintmaps import (
-    BRIGHTNESS_OPTIONS, REGIONS, load_tintmap_presets, patch_island_tintmaps,
+    load_tintmap_presets, patch_island_tintmaps,
     save_tintmap_presets, tintmap_encoder_status, validate_tintmap_presets,
 )
 from app.templates.template_statuswindow import StatusWindowTemplate
@@ -28,59 +29,45 @@ class TextureSettingsTabMixin:
             font=ctk.CTkFont(size=22, weight="bold"),
         ).grid(row=0, column=0, padx=20, pady=(20, 12), sticky="w")
 
-        self.tintmap_source_region_var = tk.StringVar(value="The Old World")
-        self.tintmap_target_region_var = tk.StringVar(value="Enbesa")
-        self.tintmap_brightness_var = tk.StringVar(value="Normal")
-        self.tintmap_custom_offset_var = tk.StringVar(value="0")
         self.tintmap_comment_var = tk.StringVar(value="")
         tint_frame = ctk.CTkFrame(tab)
         tint_frame.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="ew")
-        tint_frame.grid_columnconfigure((1, 3, 5), weight=1)
+        tint_frame.grid_columnconfigure(0, weight=1)
+        # Standard brightness control; independent of island region.
+        self.tintmap_brightness_percent_var = tk.DoubleVar(value=0.0)
+        self.tintmap_brightness_percent_label_var = tk.StringVar(value="0%")
+        test_frame = ctk.CTkFrame(tint_frame)
+        test_frame.grid(row=0, column=0, columnspan=1, padx=14, pady=(0, 14), sticky="ew")
+        test_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
-            tint_frame,
-            text="Tint Map Settings",
+            test_frame, text="Tint Map Brightness",
             font=ctk.CTkFont(weight="bold"),
-        ).grid(row=0, column=0, columnspan=7, padx=14, pady=(12, 0), sticky="w")
-        ctk.CTkLabel(tint_frame, text="From:").grid(row=1, column=0, padx=(14, 5), pady=14, sticky="e")
-        ctk.CTkOptionMenu(
-            tint_frame, variable=self.tintmap_source_region_var,
-            values=sorted(("The " + region if region in {"Old World", "New World"} else region for region in REGIONS), key=str.casefold), dynamic_resizing=False,
-        ).grid(row=1, column=1, padx=(0, 12), pady=14, sticky="ew")
-        ctk.CTkLabel(tint_frame, text="To:").grid(row=1, column=2, padx=(12, 5), pady=14, sticky="e")
-        ctk.CTkOptionMenu(
-            tint_frame, variable=self.tintmap_target_region_var,
-            values=sorted(("The " + region if region in {"Old World", "New World"} else region for region in REGIONS), key=str.casefold), dynamic_resizing=False,
-        ).grid(row=1, column=3, padx=(0, 12), pady=14, sticky="ew")
-        ctk.CTkLabel(tint_frame, text="Brightness:").grid(
-            row=1, column=4, padx=(12, 5), pady=14, sticky="e"
+        ).grid(row=0, column=0, columnspan=3, padx=12, pady=(10, 4), sticky="w")
+#        ctk.CTkLabel(
+#            test_frame,
+#            text="",
+#            wraplength=580, justify="left",
+#        ).grid(row=1, column=0, columnspan=3, padx=12, pady=(0, 8), sticky="w")
+        ctk.CTkLabel(test_frame, text="Brightness (-90% to +90%):").grid(
+            row=2, column=0, padx=12, pady=(0, 12), sticky="w")
+        self.tintmap_brightness_slider = ctk.CTkSlider(
+            test_frame, from_=-90, to=90, number_of_steps=36,
+            variable=self.tintmap_brightness_percent_var,
+            command=self._on_tintmap_brightness_percent_changed,
         )
-        brightness_frame = ctk.CTkFrame(tint_frame, fg_color="transparent")
-        brightness_frame.grid(row=1, column=5, padx=(0, 12), pady=14, sticky="ew")
-        brightness_frame.grid_columnconfigure(0, weight=1)
-        self.tintmap_brightness_menu = ctk.CTkOptionMenu(
-            brightness_frame, variable=self.tintmap_brightness_var,
-            values=list(BRIGHTNESS_OPTIONS), dynamic_resizing=False,
-            command=self._on_tintmap_brightness_changed,
-        )
-        self.tintmap_brightness_menu.grid(row=0, column=0, sticky="ew")
-        self.tintmap_custom_offset_entry = ctk.CTkEntry(
-            brightness_frame,
-            textvariable=self.tintmap_custom_offset_var,
-            width=80,
-            placeholder_text="Offset",
-        )
-        self._on_tintmap_brightness_changed()
-        ctk.CTkButton(
-            tint_frame, text="Patch Tintmaps", command=self._start_tintmap_patch,
-        ).grid(row=1, column=6, padx=(0, 14), pady=14, sticky="ew")
-
-        self.tintmap_detected_region_var = tk.StringVar()
+        self.tintmap_brightness_slider.grid(
+            row=2, column=1, padx=(0, 12), pady=(0, 12), sticky="ew")
         ctk.CTkLabel(
-            tint_frame,
-            textvariable=self.tintmap_detected_region_var,
-            anchor="w",
-        ).grid(row=2, column=1, padx=(0, 12), pady=(0, 12), sticky="w")
-        self._update_texture_detected_region()
+            test_frame, textvariable=self.tintmap_brightness_percent_label_var, width=55,
+        ).grid(row=2, column=2, padx=(0, 12), pady=(0, 12))
+        ctk.CTkButton(
+            test_frame, text="Apply Brightness",
+            command=self._start_tintmap_patch,
+        ).grid(row=3, column=2, padx=(0, 12), pady=(0, 12), sticky="ew")
+        ctk.CTkLabel(
+            test_frame, text="5% steps. 0% restores originals. Changes apply only when you click Apply.",
+            wraplength=580, justify="left",
+        ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="w")
         preset_actions = ctk.CTkFrame(tab, fg_color="transparent")
         preset_actions.grid(row=2, column=0, padx=20, pady=(0, 8), sticky="ew")
         ctk.CTkButton(
@@ -114,21 +101,10 @@ class TextureSettingsTabMixin:
         preset_table_frame.grid_rowconfigure(0, weight=1)
         table = TreeviewTemplate.create(
             preset_table_frame,
-            columns=("from_region", "to_region", "settings", "comment"),
-            headings={
-                "from_region": "From",
-                "to_region": "To",
-                "settings": "Settings",
-                "comment": "Comment",
-            },
-            min_widths={
-                "from_region": 100, "to_region": 90,
-                "settings": 100, "comment": 90,
-            },
-            max_widths={
-                "from_region": 220, "to_region": 220,
-                "settings": 240, "comment": 420,
-            },
+            columns=("settings", "comment"),
+            headings={"settings": "Brightness", "comment": "Comment"},
+            min_widths={"settings": 100, "comment": 150},
+            max_widths={"settings": 180, "comment": 600},
             stretch=(),
             selectmode="extended",
             dynamic_width=True,
@@ -144,35 +120,19 @@ class TextureSettingsTabMixin:
                 "Tint Map Settings",
                 f"Saved settings could not be loaded:\n{exc}",
             )
-            presets = load_tintmap_presets(Path(self.CONFIG_FILE).with_name("missing.ini"))
+            presets = []
         self._render_tintmap_presets(presets)
 
-    @staticmethod
-    def _tintmap_preset_settings(record):
-        if record["brightness"] == "Custom":
-            return f"Custom {record['custom_offset']}"
-        return record["brightness"]
+    def _tintmap_preset_settings(self, record):
+        percent = record["brightness_percent"]
+        return "0%" if percent == 0 else f"{percent:+d}%"
 
     def _tintmap_tree_records(self):
         records = []
         for item in self.tintmap_preset_tree.get_children(""):
-            from_region, to_region, settings, comment = self.tintmap_preset_tree.item(
-                item, "values"
-            )
-            if str(settings).startswith("Custom "):
-                brightness = "Custom"
-                custom_offset = str(settings)[len("Custom "):].strip()
-            else:
-                brightness = str(settings)
-                custom_offset = "0"
-            records.append({
-                "from_region": str(from_region),
-                "to_region": str(to_region),
-                "brightness": brightness,
-                "custom_offset": custom_offset,
-                "comment": str(comment),
-            })
-        return records
+            settings, comment = self.tintmap_preset_tree.item(item, "values")
+            records.append({"brightness_percent": int(str(settings).rstrip("%")), "comment": str(comment)})
+        return validate_tintmap_presets(records)
 
     def _render_tintmap_presets(self, records, selected_index=None):
         tree = self.tintmap_preset_tree
@@ -181,8 +141,6 @@ class TextureSettingsTabMixin:
             tree.insert(
                 "", "end",
                 values=(
-                    record["from_region"],
-                    record["to_region"],
                     self._tintmap_preset_settings(record),
                     record.get("comment", ""),
                 ),
@@ -208,10 +166,7 @@ class TextureSettingsTabMixin:
 
     def _current_tintmap_preset(self):
         return validate_tintmap_presets([{
-            "from_region": self.tintmap_source_region_var.get(),
-            "to_region": self.tintmap_target_region_var.get(),
-            "brightness": self.tintmap_brightness_var.get(),
-            "custom_offset": self.tintmap_custom_offset_var.get(),
+            "brightness_percent": self.tintmap_brightness_percent_var.get(),
             "comment": self.tintmap_comment_var.get(),
         }])[0]
 
@@ -266,36 +221,31 @@ class TextureSettingsTabMixin:
         selected = self.tintmap_preset_tree.selection()
         if len(selected) != 1:
             return
-        from_region, to_region, settings, comment = self.tintmap_preset_tree.item(
-            selected[0], "values"
-        )
-        self.tintmap_source_region_var.set(from_region)
-        self.tintmap_target_region_var.set(to_region)
+        settings, comment = self.tintmap_preset_tree.item(selected[0], "values")
+        percent = int(str(settings).rstrip("%"))
+        self.tintmap_brightness_slider.set(percent)
+        self._on_tintmap_brightness_percent_changed(percent)
         self.tintmap_comment_var.set(comment)
-        if str(settings).startswith("Custom "):
-            self.tintmap_brightness_var.set("Custom")
-            self.tintmap_custom_offset_var.set(str(settings)[len("Custom "):].strip())
-        else:
-            self.tintmap_brightness_var.set(settings)
-            self.tintmap_custom_offset_var.set("0")
-        self._on_tintmap_brightness_changed()
 
-    def _on_tintmap_brightness_changed(self, value=None):
-        custom = (value or self.tintmap_brightness_var.get()) == "Custom"
-        entry = getattr(self, "tintmap_custom_offset_entry", None)
-        if entry is None:
-            return
-        if custom:
-            entry.grid(row=0, column=1, padx=(8, 0), sticky="e")
-        else:
-            entry.grid_forget()
+
 
     def _update_texture_detected_region(self):
-        """Display original-region metadata without changing the From selection."""
-        variable = getattr(self, "tintmap_detected_region_var", None)
-        if variable is not None:
-            region = getattr(self, "original_region_name", "") or "Unknown"
-            variable.set(f"Detected region: {region}")
+        """Compatibility hook: tintmap brightness is independent of island region."""
+        return
+
+    def _on_tintmap_brightness_percent_changed(self, value):
+        """Snap the control to 5% steps; moving it never starts DDS writes."""
+        try:
+            value = float(value)
+        except (TypeError, ValueError, OverflowError):
+            value = 0.0
+        if not math.isfinite(value):
+            value = 0.0
+        percent = int(round(max(-90.0, min(90.0, value)) / 5.0)) * 5
+        self.tintmap_brightness_percent_var.set(percent)
+        self.tintmap_brightness_percent_label_var.set(
+            "0%" if percent == 0 else f"{percent:+d}%")
+        return percent
 
     def _start_tintmap_patch(self):
         """Run the tintmap worker pool without blocking CustomTkinter."""
@@ -304,19 +254,8 @@ class TextureSettingsTabMixin:
             return
 
         a7m_path = self.unpack_file_var.get().strip() or self.pack_file_var.get().strip()
-        source_region = self.tintmap_source_region_var.get().removeprefix("The ")
-        target_region = self.tintmap_target_region_var.get().removeprefix("The ")
-        brightness = self.tintmap_brightness_var.get()
-        custom_offset = 0
-        if brightness == "Custom":
-            try:
-                custom_offset = int(self.tintmap_custom_offset_var.get().strip())
-            except ValueError:
-                messagebox.showerror("Patch Tintmaps", "Custom offset must be a whole number between -255 and 255.")
-                return
-            if not -255 <= custom_offset <= 255:
-                messagebox.showerror("Patch Tintmaps", "Custom offset must be between -255 and 255.")
-                return
+        percent = self._on_tintmap_brightness_percent_changed(
+            self.tintmap_brightness_percent_var.get())
         encoder = tintmap_encoder_status()
         if not encoder["native"]:
             messagebox.showwarning(
@@ -345,8 +284,7 @@ class TextureSettingsTabMixin:
             # Same worker/queue pattern as TMC: no Tk calls in this thread.
             try:
                 result = patch_island_tintmaps(
-                    a7m_path, source_region, target_region, brightness=brightness,
-                    custom_offset=custom_offset,
+                    a7m_path, brightness_percent=percent,
                     progress_callback=lambda *args: events.put(("progress", *args)),
                 )
                 events.put(("done", result))
@@ -355,7 +293,7 @@ class TextureSettingsTabMixin:
 
         self._tintmap_patch_thread = threading.Thread(
             target=worker,
-            name="RegionalTintmapPatch",
+            name="TintmapBrightnessPatch",
             daemon=True,
         )
         self._tintmap_patch_thread.start()
@@ -452,7 +390,6 @@ class TextureSettingsTabMixin:
         summary = (
             f"Encoder: {encoder['name']}\n"
             f"Folder: {result.tintmaps_folder}\n"
-            f"Variant cache: {result.tintmaps_folder.parent / '_tintmap_variants'}\n"
             f"DDS found: {result.found}\nApplied: {result.changed}\n"
             f"Restored: {result.restored}\nSkipped: {result.skipped}\nFailed: {result.failed}"
         )

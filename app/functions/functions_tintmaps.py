@@ -1,9 +1,9 @@
-"""Region-aware patching of island tintmap DDS files.
+"""Percentage luminance adjustment of island tintmap DDS files.
 
 The patcher intentionally supports DXT1/BC1 tintmaps only. It keeps a byte-for-byte
 backup beside every changed file and always rebuilds from that backup, so changing
-regional settings repeatedly never applies corrections cumulatively.
-Converted combinations are cached beside the tintmaps folder and reused by copy.
+brightness repeatedly never applies corrections cumulatively.
+Only the original backup and active DDS are retained; no variant cache is written.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pathlib import Path
 import threading
 import os
 import hashlib
+import math
 import json
 import shutil
 import struct
@@ -46,30 +47,11 @@ def tintmap_encoder_status():
         "detail": error or "The native bc7enc encoder is unavailable.",
     }
 
-REGIONS = ("Old World", "New World", "Enbesa", "Arctic")
 BACKUP_SUFFIX = ".tintmap_original"
 PATCH_STATE_FILENAME = "tintmap_patch_state.json"
-PATCH_ROUTINE_VERSION = 3
-
-# Additional RGB offsets applied after the regional conversion.
-# Change these constants to tune the Brightness presets globally.
-BRIGHTER_RGB_OFFSET = (12, 12, 12)
-DARKER_RGB_OFFSET = (-12, -12, -12)
-BRIGHTNESS_OPTIONS = ("Normal", "Brighter (+12)", "Darker (-12)", "Custom")
-_BRIGHTNESS_OFFSETS = {
-    "Normal": (0, 0, 0),
-    "Brighter (+12)": BRIGHTER_RGB_OFFSET,
-    "Darker (-12)": DARKER_RGB_OFFSET,
-}
-TINTMAP_PRESET_FILENAME = "config_tintmap_presets.json"
-DEFAULT_TINTMAP_PRESETS = ({
-    "from_region": "The Old World",
-    "to_region": "Enbesa",
-    "brightness": "Custom",
-    "custom_offset": "-20",
-    "comment": "",
-},)
-# Keep CPU-bound Python compression from monopolizing the GUI interpreter.
+PATCH_ROUTINE_VERSION = 7
+TINTMAP_PRESET_FILENAME = "config_tintmap_brightness_presets.json"
+DEFAULT_TINTMAP_PRESETS = ()
 TINTMAP_MAX_WORKERS = 8
 
 
@@ -78,65 +60,38 @@ def tintmap_presets_path(config_file: str | Path) -> Path:
     return Path(config_file).expanduser().resolve().parent / TINTMAP_PRESET_FILENAME
 
 
-def validate_tintmap_presets(rows: object) -> list[dict[str, str]]:
-    """Validate and normalize saved From/To/Brightness records."""
+def validate_tintmap_presets(rows: object) -> list[dict]:
+    """Accept only explicit percentage presets; legacy regional presets stay separate."""
     if not isinstance(rows, list):
         raise ValueError("Tint Map presets must be a list.")
-
-    regions = {
-        "The Old World", "The New World", "Enbesa", "Arctic",
-    }
     result = []
-    for index, row in enumerate(rows, 1):
+    for row in rows:
         if not isinstance(row, dict):
-            raise ValueError(f"Invalid Tint Map preset at row {index}.")
-        from_region = str(row.get("from_region", "")).strip()
-        to_region = str(row.get("to_region", "")).strip()
-        brightness = str(row.get("brightness", "")).strip()
-        comment = str(row.get("comment", "")).strip()
-        if from_region not in regions or to_region not in regions:
-            raise ValueError(f"Select valid From and To regions (row {index}).")
-        if brightness not in BRIGHTNESS_OPTIONS:
-            raise ValueError(f"Select a valid brightness setting (row {index}).")
-
-        custom_offset = "0"
-        if brightness == "Custom":
-            try:
-                offset = int(str(row.get("custom_offset", "")).strip())
-            except ValueError as exc:
-                raise ValueError(
-                    f"Custom brightness must be a whole number (row {index})."
-                ) from exc
-            if not -255 <= offset <= 255:
-                raise ValueError(
-                    f"Custom brightness must be between -255 and 255 (row {index})."
-                )
-            custom_offset = str(offset)
-
-        result.append({
-            "from_region": from_region,
-            "to_region": to_region,
-            "brightness": brightness,
-            "custom_offset": custom_offset,
-            "comment": comment,
-        })
+            raise ValueError("Invalid brightness preset.")
+        percent = validate_brightness_percent(row.get("brightness_percent"))
+        result.append({"brightness_percent": percent, "comment": str(row.get("comment", "")).strip()})
     return result
 
 
-def load_tintmap_presets(config_file: str | Path) -> list[dict[str, str]]:
-    """Load stored Tint Map presets, falling back to the suggested starting row."""
+def validate_brightness_percent(value) -> int:
+    """Reject non-finite, out-of-range or non-5% values without silent rounding."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("Brightness must be -90% to +90% in 5% steps.") from None
+    if isinstance(value, bool) or not math.isfinite(number) or not -90 <= number <= 90 or number % 5:
+        raise ValueError("Brightness must be -90% to +90% in 5% steps.")
+    return int(number)
+
+
+def load_tintmap_presets(config_file: str | Path) -> list[dict]:
+    """Load percentage presets without reinterpreting old RGB/region settings."""
     path = tintmap_presets_path(config_file)
-    legacy_path = path.with_name("tintmap_presets.json")
-    if not path.exists() and legacy_path.is_file():
-        try:
-            os.replace(legacy_path, path)
-        except OSError:
-            path = legacy_path
     if not path.exists():
-        return [dict(row) for row in DEFAULT_TINTMAP_PRESETS]
+        return []
     data = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(data, dict) or data.get("schema") != 1:
-        raise ValueError("Unsupported Tint Map preset file format.")
+    if not isinstance(data, dict) or data.get("schema") != 2:
+        raise ValueError("Unsupported brightness preset format.")
     return validate_tintmap_presets(data.get("presets"))
 
 
@@ -146,19 +101,13 @@ def save_tintmap_presets(
     """Validate and atomically save Tint Map presets beside the config file."""
     records = validate_tintmap_presets(rows)
     path = tintmap_presets_path(config_file)
-    legacy_path = path.with_name("tintmap_presets.json")
-    if not path.exists() and legacy_path.is_file():
-        try:
-            os.replace(legacy_path, path)
-        except OSError:
-            pass
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(
         prefix="tintmap_presets_", suffix=".tmp", dir=path.parent,
     )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump({"schema": 1, "presets": records}, stream, ensure_ascii=False, indent=2)
+            json.dump({"schema": 2, "presets": records}, stream, ensure_ascii=False, indent=2)
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
@@ -167,26 +116,6 @@ def save_tintmap_presets(
         if os.path.exists(temporary):
             os.unlink(temporary)
     return path
-
-# Robust median/IQR profiles calculated from the supplied tintmap analysis.
-# Values are file-level RGB means. The mapper aligns source median/spread with
-# target median/spread and blends by pair-specific strength.
-_PROFILES = {
-    "Old World": ((129.485, 110.567, 128.352), (3.738, 41.327, 5.382)),
-    "New World": ((128.655, 112.172, 128.758), (1.600, 32.630, 1.805)),
-    "Enbesa": ((128.625, 107.870, 128.624), (0.855, 19.235, 0.852)),
-    "Arctic": ((131.400, 131.120, 131.022), (1.027, 4.249, 5.749)),
-}
-
-_STRENGTH = {
-    frozenset(("Old World", "New World")): 0.40,
-    frozenset(("Old World", "Enbesa")): 0.70,
-    frozenset(("New World", "Enbesa")): 0.70,
-    frozenset(("Old World", "Arctic")): 0.75,
-    frozenset(("New World", "Arctic")): 0.75,
-    frozenset(("Enbesa", "Arctic")): 0.65,
-}
-
 
 @dataclass(frozen=True)
 class TintmapPatchResult:
@@ -333,27 +262,18 @@ def _encode_dxt1(rgb: Image.Image) -> bytes:
     return _encode_dxt1_python(rgb)
 
 
-def _transform_image(image: Image.Image, source_region: str, target_region: str, brightness: str, custom_offset=0) -> Image.Image:
-    source_median, source_iqr = _PROFILES[source_region]
-    target_median, target_iqr = _PROFILES[target_region]
-    strength = _STRENGTH.get(frozenset((source_region, target_region)), 0.65)
-    rgb = image.convert("RGB")
-    # The transformation is channel-independent. Build exact 256-value lookup
-    # tables instead of running a Python loop for every pixel.
-    scales = [max(0.25, min(4.0, target_iqr[i] / source_iqr[i])) for i in range(3)]
-    brightness_offset = ((custom_offset,) * 3 if brightness == "Custom" else _BRIGHTNESS_OFFSETS[brightness])
-    lut = []
-    for i in range(3):
-        for value in range(256):
-            matched = target_median[i] + (value - source_median[i]) * scales[i]
-            converted = value * (1.0 - strength) + matched * strength
-            lut.append(max(0, min(255, round(converted + brightness_offset[i]))))
-    return rgb.point(lut)
+def _transform_image(image: Image.Image, brightness_percent=0) -> Image.Image:
+    """Scale original luminance Y only; R/B contain encoded chroma, not RGB."""
+    percent = validate_brightness_percent(brightness_percent)
+    factor = 1.0 + percent / 100.0
+    identity = list(range(256))
+    luminance = [max(0, min(255, round(value * factor))) for value in identity]
+    return image.convert("RGB").point(identity + luminance + identity)
 
 
-def _patch_one(path: Path, source_region: str, target_region: str, brightness: str, custom_offset=0) -> str:
+def _patch_one(path: Path, brightness_percent=0) -> str:
     backup = path.with_name(path.name + BACKUP_SUFFIX)
-    if source_region == target_region and brightness == "Normal":
+    if brightness_percent == 0:
         if backup.is_file():
             shutil.copy2(backup, path)
             return "restored"
@@ -368,7 +288,7 @@ def _patch_one(path: Path, source_region: str, target_region: str, brightness: s
         raw = stream.read()
     header_size = 148 if raw[84:88] == b"DX10" else 128
     with Image.open(source) as decoded:
-        transformed = _transform_image(decoded, source_region, target_region, brightness, custom_offset)
+        transformed = _transform_image(decoded, brightness_percent)
     payload = _encode_dxt1(transformed)
     expected = transformed.width * transformed.height // 2
     if len(payload) != expected:
@@ -415,7 +335,7 @@ class _PatchState:
                 self.entries = data["files"]
                 for entry in self.entries.values():
                     if not isinstance(entry, dict) or not all(
-                        key in entry for key in ("source_region", "target_region", "version", "sha256")
+                        key in entry for key in ("version", "sha256")
                     ):
                         raise ValueError("Invalid patch state entry")
             except (ValueError, TypeError, AttributeError) as exc:
@@ -440,7 +360,7 @@ class _PatchState:
                 if os.path.exists(temporary):
                     os.unlink(temporary)
 
-    def patch(self, path, source_region, target_region, brightness, custom_offset=0):
+    def patch(self, path, brightness_percent=0):
         key = path.relative_to(self.folder).as_posix()
         with self.lock:
             entry = self.entries.get(key)
@@ -456,7 +376,7 @@ class _PatchState:
         if not backup.is_file():
             _atomic_copy(path, backup)
         original_hash = _sha256(backup)
-        identity = source_region == target_region and brightness == "Normal"
+        identity = brightness_percent == 0
         if identity:
             if _sha256(path) == original_hash:
                 self.store(key, None)
@@ -467,49 +387,21 @@ class _PatchState:
 
         if _dds_format(backup) not in {"DXT1", "BC1"}:
             return "skipped:Unsupported DDS format"
-        region_codes = {"Old World": "ow", "New World": "nw",
-                        "Enbesa": "enbesa", "Arctic": "arctic"}
-        variant_name = (f"{region_codes[source_region]}_to_{region_codes[target_region]}"
-                        f"__{brightness.lower()}_{custom_offset}" if brightness == "Custom" else f"__{brightness.lower()}")
-        # Outside tintmaps: the normal DDS scan cannot discover cached variants.
-        cache_root = self.folder.parent / "_tintmap_variants" / variant_name
-        cached = cache_root / key
-        metadata = cached.with_name(cached.name + ".cache.json")
-        expected = {"source_region": source_region, "target_region": target_region,
-                    "brightness": brightness, "version": PATCH_ROUTINE_VERSION,
-                    "original_sha256": original_hash}
-        valid = False
-        if cached.is_file() and metadata.is_file():
-            try:
-                data = json.loads(metadata.read_text(encoding="utf-8"))
-                valid = (isinstance(data, dict)
-                         and all(data.get(k) == v for k, v in expected.items())
-                         and data.get("sha256") == _sha256(cached))
-            except (OSError, ValueError, TypeError):
-                valid = False
-        reused = valid
-        if not valid:
-            cached.parent.mkdir(parents=True, exist_ok=True)
-            # Stage away from active files. Failed conversion leaves active DDS
-            # and previously stored variants untouched.
-            with tempfile.TemporaryDirectory(prefix="tintmap_variant_", dir=cached.parent) as tmp:
-                staged = Path(tmp) / path.name
-                shutil.copy2(backup, staged)
-                result = _patch_one(staged, source_region, target_region, brightness, custom_offset)
-                if result != "changed":
-                    return result
-                _atomic_copy(staged, cached)
-            _atomic_json(metadata, dict(expected, sha256=_sha256(cached)))
-        digest = _sha256(cached)
-        if _sha256(path) == digest:
-            state = "skipped:Variant already active"
-        else:
-            _atomic_copy(cached, path)
-            state = "changed:Copied cached variant" if reused else "changed:Created and applied variant"
-        self.store(key, {"source_region": source_region, "target_region": target_region,
-                         "brightness": brightness, "version": PATCH_ROUTINE_VERSION,
-                         "sha256": digest})
-        return state
+        # No retained variants: encode directly from the immutable original.
+        # The writer stages only a temporary file and atomically replaces active DDS.
+        if (entry is not None
+                and entry.get("brightness_percent") == brightness_percent
+                and entry.get("version") == PATCH_ROUTINE_VERSION
+                and entry.get("original_sha256") == original_hash):
+            return "skipped:Brightness already applied"
+        result = _patch_one(path, brightness_percent)
+        if result != "changed":
+            return result
+        self.store(key, {"brightness_percent": brightness_percent,
+                         "version": PATCH_ROUTINE_VERSION,
+                         "original_sha256": original_hash,
+                         "sha256": _sha256(path)})
+        return "changed:Applied brightness from original"
 
 
 def _atomic_copy(source, destination):
@@ -527,32 +419,10 @@ def _atomic_copy(source, destination):
             os.unlink(temporary)
 
 
-def _atomic_json(destination, data):
-    fd, temporary = tempfile.mkstemp(prefix=destination.name + ".", suffix=".tmp",
-                                     dir=destination.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(data, stream, indent=2, sort_keys=True)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, destination)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
 
-def patch_island_tintmaps(
-        a7m_path, source_region, target_region, brightness="Normal", custom_offset=0,
-        workers=None, progress_callback=None):
-    if source_region not in REGIONS or target_region not in REGIONS:
-        raise ValueError("Unknown source or target region.")
-    if brightness not in BRIGHTNESS_OPTIONS:
-        raise ValueError("Unknown brightness option.")
-    try:
-        custom_offset = int(custom_offset)
-    except (TypeError, ValueError):
-        raise ValueError("Custom brightness offset must be a whole number.") from None
-    if not -255 <= custom_offset <= 255:
-        raise ValueError("Custom brightness offset must be between -255 and 255.")
+def patch_island_tintmaps(a7m_path, brightness_percent=0, workers=None, progress_callback=None):
+    """Apply percentage luminance adjustment from immutable original backups."""
+    brightness_percent = validate_brightness_percent(brightness_percent)
     encoder = tintmap_encoder_status()
     if progress_callback is not None:
         progress_callback("encoder", encoder["name"], encoder["detail"], encoder["native"])
@@ -577,7 +447,7 @@ def patch_island_tintmaps(
     counts = {"changed": 0, "restored": 0, "skipped": 0, "failed": 0}
     errors = []
     with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="Tintmap") as executor:
-        futures = {executor.submit(patch_state.patch, p, source_region, target_region, brightness, custom_offset): p for p in files}
+        futures = {executor.submit(patch_state.patch, p, brightness_percent): p for p in files}
         completed = 0
         for future in as_completed(futures):
             path = futures[future]
