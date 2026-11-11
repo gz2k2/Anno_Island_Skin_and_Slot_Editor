@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.122.9]
+
+- added lost .csv Import / Export Buttons (Custom Slots)
+
 ## [v0.122.8]
 
 ### Added
