@@ -1,22 +1,13 @@
+
 from __future__ import annotations
 
-from app.functions.function_custom_content import (
-    get_combined_categories,
-    get_combined_category_rows,
-    get_combined_object_database,
-    get_combined_regions,
-    get_category_for_object,
-    get_regions_for_category,
-    get_regions_for_object,
-    display_category,
-    display_regions,
-)
+from app.functions.function_custom_content import get_combined_category_rows, get_combined_object_database, get_category_for_object, display_category, display_regions
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import random
 import math
 import json
-import shutil
+
 import copy
 import hashlib
 import os
@@ -32,23 +23,25 @@ from app.backend.backend_patch_store import PATCH_STORE
 import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
-from app.config.config_rd3d import (
-    DEFAULT_RD3D_CATEGORY,
-    RD3D_CATEGORIES,
-    rd3d_category_for_object,
-    rd3d_regions_for_category,
-)
-from app.database.database_props import RD3D_OBJECT_DATABASE
+from app.config.config_rd3d import DEFAULT_RD3D_CATEGORY, RD3D_CATEGORIES, rd3d_regions_for_category
+
 from app.config.config_colors import TYPE_CATEGORY_COLOR_FAMILIES, TYPE_CATEGORY_COLORS, DEFAULT_TYPE_COLOR
 from app.functions.function_map_selection import MapSelectionMixin
-from app.functions.function_place_object import PlaceObjectMixin, ObjectMapSession, world_from_click
-from app.functions.function_density import DensitySession
+from app.functions.function_place_object import PlaceObjectMixin, ObjectMapSession
+from app.functions.function_object_region_conversion import (
+    REGION_CATEGORY_TOKENS,
+    RegionConversion,
+    category_region,
+    choose_target_path,
+    plan_region_conversion,
+)
+
 from app.templates.template_map_view import MapViewTemplate
 from app.templates.template_profiles import ProfilesTemplate, ProfileArchiveStore
 from app.templates.template_popup import PopupTemplate
 from app.templates.template_statuswindow import StatusWindowTemplate
 from app.templates.template_category_picker import CategoryPickerTemplate
-from app.templates.template_table import TemplateTable, TableColumn, RD3D_OBJECT_COLUMNS, build_rd3d_style_row
+from app.templates.template_table import TemplateTable, TableColumn, RD3D_OBJECT_COLUMNS
 from app.templates.template_treeview import TreeviewTemplate
 
 # -----------------------------------------------------------------------------
@@ -307,8 +300,29 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             font=ctk.CTkFont(size=22, weight="bold"),
         ).pack(anchor="w")
 
+        easy_mode = ctk.CTkFrame(tab)
+        easy_mode.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+        ctk.CTkLabel(
+            easy_mode,
+            text="Easy Region Conversion",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).pack(anchor="w", padx=16, pady=(14, 8))
+        easy_mode_buttons = ctk.CTkFrame(easy_mode, fg_color="transparent")
+        easy_mode_buttons.pack(fill="x", padx=16, pady=(0, 16))
+        ctk.CTkButton(
+            easy_mode_buttons, text="Easy Region Conversion", width=190, height=38,
+            font=ctk.CTkFont(weight="bold"), command=self._open_object_easy_mode,
+        ).pack(side="left")
+
+        advanced_label = ctk.CTkLabel(
+            tab,
+            text="Advanced",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        )
+        advanced_label.grid(row=2, column=0, padx=36, pady=(8, 8), sticky="w")
+
         objects_1 = ctk.CTkFrame(tab)
-        objects_1.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+        objects_1.grid(row=3, column=0, padx=20, pady=(0, 10), sticky="ew")
         ctk.CTkLabel(
             objects_1,
             text="Objects (rd3d)",
@@ -332,7 +346,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         ).pack(side="left")
 
         objects_2 = ctk.CTkFrame(tab)
-        objects_2.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="ew")
+        objects_2.grid(row=4, column=0, padx=20, pady=(0, 20), sticky="ew")
         ctk.CTkLabel(
             objects_2,
             text="Objects (tmc)",
@@ -499,6 +513,527 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             self.rd3d_ram_cache = None
             self.object_configuration_table1_rows = []
         return True
+
+    def _open_object_easy_mode(self):
+        """Open the guided RD3D region conversion dialog."""
+        if not self.object_configuration_table1_rows and not self.object_configuration_table2_rows:
+            messagebox.showinfo(
+                "Easy Region Conversion",
+                "Load the RD3D and/or TMC object cache first by opening the corresponding Objects Table.",
+                parent=self,
+            )
+            return
+        current = getattr(self, "_object_easy_mode_window", None)
+        if current is not None and current.winfo_exists():
+            current.deiconify()
+            PopupTemplate.safe_activate(current)
+            return
+        built = PopupTemplate.create_window(
+            self,
+            title="Easy Region Conversion",
+            heading="Easy Region Conversion",
+            geometry="1120x780",
+            min_size=(820, 600),
+            resizable=True,
+        )
+        popup = built["window"]
+        self._object_easy_mode_window = popup
+        popup.grid_columnconfigure(0, weight=1)
+        popup.grid_rowconfigure(3, weight=1)
+
+        controls = ctk.CTkFrame(popup, fg_color="transparent")
+        controls.grid(row=1, column=0, padx=18, pady=(0, 10), sticky="ew")
+        ctk.CTkLabel(controls, text="Files").pack(side="left", padx=(0, 8))
+        file_scope = tk.StringVar(master=popup, value="RD3D + TMC")
+        available_scopes = []
+        if self.object_configuration_table1_rows and self.object_configuration_table2_rows:
+            available_scopes.append("RD3D + TMC")
+        if self.object_configuration_table1_rows:
+            available_scopes.append("RD3D")
+        if self.object_configuration_table2_rows:
+            available_scopes.append("TMC")
+        if available_scopes:
+            file_scope.set(available_scopes[0])
+        ctk.CTkOptionMenu(
+            controls, variable=file_scope, values=tuple(available_scopes), width=140,
+        ).pack(side="left", padx=(0, 18))
+        ctk.CTkLabel(controls, text="Target Region").pack(side="left", padx=(0, 8))
+        remembered_region = getattr(self, "easy_mode_target_region", "Enbesa")
+        if remembered_region not in REGION_CATEGORY_TOKENS:
+            remembered_region = "Enbesa"
+        target_region = tk.StringVar(master=popup, value=remembered_region)
+        ctk.CTkOptionMenu(
+            controls, variable=target_region,
+            values=tuple(REGION_CATEGORY_TOKENS), width=150,
+        ).pack(side="left", padx=(0, 18))
+        ctk.CTkLabel(controls, text="Variant handling").pack(side="left", padx=(0, 8))
+        variant_mode = tk.StringVar(master=popup, value="Preserve if possible")
+        ctk.CTkOptionMenu(
+            controls, variable=variant_mode,
+            values=("Preserve if possible", "Avoid duplicates"), width=180,
+        ).pack(side="left")
+
+        summary = tk.StringVar(master=popup, value="Select a target region and preview the conversion.")
+        ctk.CTkLabel(
+            popup, textvariable=summary, anchor="w", justify="left",
+        ).grid(row=2, column=0, padx=18, pady=(0, 8), sticky="ew")
+
+        preview_frame = ctk.CTkFrame(popup)
+        preview_frame.grid(row=3, column=0, padx=18, pady=(0, 10), sticky="nsew")
+        preview_frame.grid_columnconfigure(0, weight=1)
+        preview_frame.grid_rowconfigure(0, weight=3)
+        preview_frame.grid_rowconfigure(1, weight=2)
+        columns = ("source", "target", "count", "status")
+        widgets = TreeviewTemplate.create(
+            preview_frame,
+            columns=columns,
+            headings={
+                "source": "Current category", "target": "Target category",
+                "count": "Count", "status": "Status",
+            },
+            widths={"source": 270, "target": 270, "count": 90, "status": 140},
+            min_widths={"source": 180, "target": 180, "count": 70, "status": 110},
+            max_widths={"source": 440, "target": 440, "count": 120, "status": 180},
+            stretch={"source", "target"}, sortable=True, dynamic_width=True,
+        )
+        tree = widgets["tree"]
+        tree.tag_configure("rd3d_source", foreground="#5DADE2")
+        tree.tag_configure("tmc_source", foreground="#F5B041")
+        state = {"changes": [], "stats": None, "groups": {}}
+
+        unmapped_frame = ctk.CTkFrame(preview_frame, fg_color="transparent")
+        unmapped_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        unmapped_frame.grid_columnconfigure(0, weight=1)
+        unmapped_frame.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(
+            unmapped_frame,
+            text=(
+                "Not automatically converted categories. Change these categories manually "
+                "in the Advanced RD3D or TMC object tables."
+            ),
+            anchor="w", justify="left", wraplength=950,
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=0, pady=(0, 6), sticky="ew")
+        unmapped_widgets = TreeviewTemplate.create(
+            unmapped_frame,
+            columns=("source", "count", "reason"),
+            headings={
+                "source": "Category", "count": "Count", "reason": "Reason",
+            },
+            widths={"source": 360, "count": 90, "reason": 420},
+            min_widths={"source": 220, "count": 70, "reason": 280},
+            max_widths={"source": 520, "count": 120, "reason": 620},
+            stretch={"source", "reason"}, sortable=True, dynamic_width=True,
+        )
+        unmapped_tree = unmapped_widgets["tree"]
+        unmapped_tree.tag_configure("neutral", foreground="#B0B0B0")
+        unmapped_tree.tag_configure("no_mapping", foreground="#E67E73")
+
+        manual_controls = ctk.CTkFrame(popup, fg_color="transparent")
+        manual_controls.grid(row=4, column=0, padx=18, pady=(0, 10), sticky="ew")
+        ctk.CTkLabel(
+            manual_controls, text="Selected rows target category",
+        ).pack(side="left", padx=(0, 8))
+        manual_target = tk.StringVar(master=popup, value="")
+        manual_target_display = ctk.CTkEntry(
+            manual_controls, textvariable=manual_target, width=300, state="readonly",
+        )
+        manual_target_display.pack(side="left", padx=(0, 8))
+
+        def selected_sources():
+            """Return selected RD3D/TMC paths with stable table identifiers."""
+            scope = file_scope.get()
+            sources = []
+            if scope in {"RD3D", "RD3D + TMC"}:
+                sources.extend(
+                    ("rd3d", row_index, variable.get().strip())
+                    for row_index, _original, variable, _count
+                    in self.object_configuration_table1_rows
+                )
+            if scope in {"TMC", "RD3D + TMC"}:
+                sources.extend(
+                    ("tmc", row_index, variable.get().strip())
+                    for row_index, _object_id, _original, _count, variable
+                    in self.object_configuration_table2_rows
+                )
+            return sources
+
+        def preview():
+            sources = selected_sources()
+            indexed_rows = [
+                (position, path) for position, (_kind, _row_index, path) in enumerate(sources)
+            ]
+            changes, stats = plan_region_conversion(
+                indexed_rows,
+                target_region.get(),
+                RD3D_CATEGORIES,
+                lambda path: get_category_for_object(path, self.CONFIG_FILE),
+                variant_mode.get(),
+            )
+            unmapped = {}
+            changed_positions = {change.row_index for change in changes}
+            for position, (_kind, _row_index, path) in enumerate(sources):
+                category = get_category_for_object(path, self.CONFIG_FILE)
+                source_region = category_region(category)
+                if source_region == target_region.get() or position in changed_positions:
+                    continue
+                reason = (
+                    "Region-neutral category"
+                    if source_region is None else
+                    f"No automatic mapping to {target_region.get()}"
+                )
+                key = (category, reason)
+                unmapped[key] = unmapped.get(key, 0) + 1
+            unmapped_tree.delete(*unmapped_tree.get_children(""))
+            for index, ((category, reason), count) in enumerate(sorted(
+                unmapped.items(), key=lambda item: (-item[1], item[0][0].casefold())
+            )):
+                unmapped_tree.insert(
+                    "", "end", iid=f"unmapped_{index}",
+                    values=(category, count, reason),
+                    tags=("neutral" if reason == "Region-neutral category" else "no_mapping",),
+                )
+            state["changes"] = [
+                (sources[change.row_index][0], sources[change.row_index][1], change)
+                for change in changes
+            ]
+            state["stats"] = stats
+            tree.delete(*tree.get_children(""))
+            grouped = {}
+            for change_index, (kind, _row_index, change) in enumerate(state["changes"]):
+                key = (kind, change.source_category, change.target_category, change.status)
+                grouped.setdefault(key, []).append(change_index)
+            state["groups"] = {}
+            for group_index, ((kind, source, target, status), change_indices) in enumerate(sorted(
+                grouped.items(), key=lambda item: (item[0][0], item[0][1].casefold(), item[0][2].casefold())
+            )):
+                item_id = f"group_{group_index}"
+                state["groups"][item_id] = change_indices
+                tree.insert(
+                    "", "end", iid=item_id,
+                    values=(source, target, len(change_indices), status),
+                    tags=("rd3d_source" if kind == "rd3d" else "tmc_source",),
+                )
+            summary.set(
+                f"Scanned: {stats['scanned']}   |   Changes: {stats['changed']}   |   "
+                f"Already matching: {stats['already_matching']}   |   "
+                f"No mapping: {stats['no_mapping']}   |   Region neutral: {stats['neutral']}"
+            )
+
+        def update_manual_categories(*_args):
+            """List compatible target categories for the selected preview rows."""
+            selected = tree.selection()
+            source_families = set()
+            for item_id in selected:
+                indices = state["groups"].get(item_id, ())
+                for index in indices:
+                    change = state["changes"][index][2]
+                    source_families.add(change.source_category.split(maxsplit=1)[0].casefold())
+            categories = [
+                category for category in RD3D_CATEGORIES
+                if category_region(category) == target_region.get()
+                and (
+                    not source_families
+                    or category.split(maxsplit=1)[0].casefold() in source_families
+                )
+            ]
+            categories.sort(key=str.casefold)
+            if manual_target.get() not in categories:
+                manual_target.set("")
+
+        def open_manual_category_picker():
+            """Open the shared Mass Replace category selector for selected rows."""
+            selected = tree.selection()
+            if not selected:
+                messagebox.showinfo(
+                    "Easy Region Conversion",
+                    "Select one or more rows in the preview table first.",
+                    parent=popup,
+                )
+                return
+            source_categories = []
+            source_families = set()
+            for item_id in selected:
+                for index in state["groups"].get(item_id, ()):
+                    source_category = state["changes"][index][2].source_category
+                    source_categories.append(source_category)
+                    source_families.add(source_category.split(maxsplit=1)[0].casefold())
+            categories = [
+                row for row in self._object_configuration_database_categories()
+                if category_region(row["category"]) == target_region.get()
+                and row["category"].split(maxsplit=1)[0].casefold() in source_families
+            ]
+            heading = source_categories[0] if len(set(source_categories)) == 1 else "Selected rows"
+            picker_window = CategoryPickerTemplate.create(
+                popup,
+                categories=categories,
+                selected=manual_target.get().strip(),
+                color_provider=self._object_configuration_picker_color,
+                on_select=manual_target.set,
+                title="Select Target Category",
+                initial_filters={
+                    "region": target_region.get(),
+                    "group": CategoryPickerTemplate.FILTER_ALL,
+                },
+                heading_category=heading,
+                heading_category_color=(
+                    self._object_configuration_color_for_category(heading)
+                    if len(set(source_categories)) == 1 else None
+                ),
+            )
+            try:
+                picker_window.transient(popup)
+                PopupTemplate.apply_native_titlebar_controls(picker_window)
+                picker_window.lift(popup)
+                PopupTemplate.request_focus(picker_window, delay_ms=100)
+            except (tk.TclError, AttributeError):
+                pass
+
+        def apply_manual_target_category():
+            """Replace automatic mappings for selected preview groups."""
+            selected = tree.selection()
+            target_category = manual_target.get()
+            targets = tuple(RD3D_CATEGORIES.get(target_category, ()))
+            if not selected:
+                messagebox.showinfo(
+                    "Easy Region Conversion",
+                    "Select one or more rows in the preview table first.",
+                    parent=popup,
+                )
+                return
+            if not targets:
+                restore_easy_mode_popup()
+                messagebox.showwarning(
+                    "Easy Region Conversion",
+                    "Select a valid target category.", parent=popup,
+                )
+                return
+            changed_count = 0
+            used_paths = set()
+            for item_id in selected:
+                indices = state["groups"].get(item_id, ())
+                for index in indices:
+                    kind, row_index, change = state["changes"][index]
+                    target_path = choose_target_path(
+                        change.source_path, targets, used_paths, variant_mode.get(),
+                    )
+                    if not target_path:
+                        continue
+                    status = (
+                        "Manual exact variant"
+                        if target_path.rsplit("_", 1)[-1] == change.source_path.rsplit("_", 1)[-1]
+                        else "Manual variant fallback"
+                    )
+                    state["changes"][index] = (
+                        kind,
+                        row_index,
+                        RegionConversion(
+                            row_index=change.row_index,
+                            source_path=change.source_path,
+                            target_path=target_path,
+                            source_category=change.source_category,
+                            target_category=target_category,
+                            status=status,
+                        ),
+                    )
+                    changed_count += 1
+            # Rebuild the grouped preview without recalculating automatic mappings.
+            tree.delete(*tree.get_children(""))
+            grouped = {}
+            for change_index, (kind, _row_index, change) in enumerate(state["changes"]):
+                key = (kind, change.source_category, change.target_category, change.status)
+                grouped.setdefault(key, []).append(change_index)
+            state["groups"] = {}
+            for group_index, ((kind, source, target, status), change_indices) in enumerate(sorted(
+                grouped.items(), key=lambda item: (item[0][0], item[0][1].casefold(), item[0][2].casefold())
+            )):
+                item_id = f"group_{group_index}"
+                state["groups"][item_id] = change_indices
+                tree.insert(
+                    "", "end", iid=item_id,
+                    values=(source, target, len(change_indices), status),
+                    tags=("rd3d_source" if kind == "rd3d" else "tmc_source",),
+                )
+            summary.set(f"Manually reassigned {changed_count} object mapping(s).")
+            update_manual_categories()
+
+        tree.bind("<<TreeviewSelect>>", update_manual_categories, add="+")
+        ctk.CTkButton(
+            manual_controls, text="Select Category...", width=145,
+            command=open_manual_category_picker,
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            manual_controls, text="Change Target Category", width=170,
+            command=apply_manual_target_category,
+        ).pack(side="left")
+
+        def restore_easy_mode_popup():
+            """Restore the Easy Mode popup after save dialogs or status windows."""
+            try:
+                if popup.winfo_exists():
+                    popup.deiconify()
+                    popup.transient(self)
+                    popup.lift()
+                    popup.attributes("-topmost", True)
+                    popup.after(120, lambda: popup.attributes("-topmost", False))
+                    PopupTemplate.request_focus(popup, delay_ms=140)
+            except (tk.TclError, AttributeError):
+                pass
+
+        def apply_changes():
+            changes = state.get("changes") or []
+            if not changes:
+                messagebox.showinfo(
+                    "Easy Region Conversion", "Preview the conversion first. No changes are pending.",
+                    parent=popup,
+                )
+                return
+            rd3d_variables = {
+                row_index: variable
+                for row_index, _original, variable, _count
+                in self.object_configuration_table1_rows
+            }
+            tmc_variables = {
+                row_index: variable
+                for row_index, _object_id, _original, _count, variable
+                in self.object_configuration_table2_rows
+            }
+            applied_rd3d = applied_tmc = 0
+            for kind, row_index, change in changes:
+                variables = rd3d_variables if kind == "rd3d" else tmc_variables
+                variable = variables.get(row_index)
+                if variable is not None:
+                    variable.set(change.target_path)
+                    if kind == "rd3d":
+                        applied_rd3d += 1
+                    else:
+                        applied_tmc += 1
+            if applied_rd3d:
+                self._render_object_configuration_table_1()
+            if applied_tmc:
+                self._render_object_configuration_table_2()
+            applied = applied_rd3d + applied_tmc
+
+            def finish_apply(tmc_result=None, tmc_error=None, rd3d_saved=True, rd3d_error=None):
+                """Finish only after every requested asynchronous save completed."""
+                restore_easy_mode_popup()
+                tmc_saved = True
+                tmc_details = ""
+                if applied_tmc:
+                    if tmc_error:
+                        tmc_saved = False
+                        tmc_details = str(tmc_error)
+                    elif tmc_result is None:
+                        tmc_saved = False
+                        tmc_details = "TMC save did not return a result."
+                    else:
+                        saved_files, changed_values, errors = tmc_result
+                        tmc_saved = not errors
+                        tmc_details = f"TMC files saved: {saved_files} | TMC changes: {changed_values}"
+                        if errors:
+                            tmc_details += "\n" + "\n".join(errors[:10])
+                success = rd3d_saved and tmc_saved
+                rd3d_details = str(rd3d_error or "")
+                if success:
+                    state["changes"] = []
+                    preview()
+                    update_manual_categories()
+                    self.status_var.set(
+                        f"Easy Region Conversion applied and saved {applied_rd3d} RD3D "
+                        f"and {applied_tmc} TMC changes"
+                    )
+                    summary.set(
+                        f"Applied and saved {applied_rd3d} RD3D and {applied_tmc} TMC changes."
+                    )
+                    messagebox.showinfo(
+                        "Easy Region Conversion",
+                        f"Updated and saved RD3D entries: {applied_rd3d}\n"
+                        f"Updated and saved TMC entries: {applied_tmc}"
+                        + (f"\n\n{tmc_details}" if tmc_details else ""),
+                        parent=popup,
+                    )
+                else:
+                    preview()
+                    update_manual_categories()
+                    self.status_var.set(
+                        f"Easy Region Conversion applied {applied} changes, but saving was incomplete"
+                    )
+                    summary.set(
+                        f"Applied {applied_rd3d} RD3D and {applied_tmc} TMC changes; saving incomplete."
+                    )
+                    messagebox.showwarning(
+                        "Easy Region Conversion",
+                        f"Updated RD3D entries: {applied_rd3d}\n"
+                        f"RD3D: {'saved' if rd3d_saved else 'save failed'}"
+                        + (f" ({rd3d_details})" if rd3d_details else "") + "\n"
+                        f"Updated TMC entries: {applied_tmc}\n"
+                        f"TMC: {'saved' if tmc_saved else 'save failed'}"
+                        + (f"\n\n{tmc_details}" if tmc_details else "")
+                        + "\n\nFailed data remains in RAM so saving can be retried.",
+                        parent=popup,
+                    )
+                PopupTemplate.schedule(popup, 50, restore_easy_mode_popup)
+
+            def start_tmc_save(rd3d_saved, rd3d_error=None):
+                """Start TMC only after the asynchronous RD3D save has completed."""
+                if not rd3d_saved:
+                    finish_apply(None, None, False, rd3d_error)
+                    return
+                if not applied_tmc:
+                    finish_apply(None, None, True, None)
+                    return
+                self._easy_mode_tmc_save_callback = lambda result, error: finish_apply(
+                    result, error, True, None
+                )
+                started = self._save_object_configuration_table_2(notify=False)
+                if not started:
+                    self._easy_mode_tmc_save_callback = None
+                    finish_apply(
+                        None, "The TMC save operation could not be started after RD3D completed.",
+                        True, None,
+                    )
+                else:
+                    summary.set(f"RD3D saved. Saving {applied_tmc} TMC change(s)...")
+
+            if applied_rd3d:
+                self._easy_mode_rd3d_save_callback = start_tmc_save
+                started = self._save_object_configuration_table_1(notify=False)
+                if not started:
+                    self._easy_mode_rd3d_save_callback = None
+                    start_tmc_save(False, "The RD3D save operation could not be started.")
+                else:
+                    summary.set(f"Saving {applied_rd3d} RD3D change(s)...")
+            else:
+                start_tmc_save(True, None)
+
+        actions = ctk.CTkFrame(popup, fg_color="transparent")
+        actions.grid(row=5, column=0, padx=18, pady=(0, 16), sticky="ew")
+        actions.grid_columnconfigure(0, weight=1)
+        ctk.CTkButton(
+            actions, text="Apply", width=140,
+            font=ctk.CTkFont(weight="bold"), command=apply_changes,
+        ).grid(row=0, column=2)
+        def remember_target_region(*_args):
+            """Persist the Easy Mode target region in config.ini."""
+            selected = target_region.get()
+            if selected not in REGION_CATEGORY_TOKENS:
+                return
+            self.easy_mode_target_region = selected
+            self._save_config()
+            preview()
+            update_manual_categories()
+
+        def refresh_preview(*_args):
+            """Rebuild the preview immediately after an Easy Mode option changes."""
+            preview()
+            update_manual_categories()
+
+        file_scope.trace_add("write", refresh_preview)
+        target_region.trace_add("write", remember_target_region)
+        variant_mode.trace_add("write", refresh_preview)
+        preview()
+        update_manual_categories()
+        PopupTemplate.schedule(popup, 50, lambda: PopupTemplate.safe_activate(popup))
 
     def _open_object_configuration_table_1(self):
         # Keep the user intent while RD3D is loaded asynchronously. The completion
@@ -2317,6 +2852,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         # Internal cache state. It is shown in the table/status dialogs when
         # relevant, not as a loose label in the Object Configuration tab.
         self.tmc_ram_info = tk.StringVar(value="XML cache: no island loaded")
+        self._easy_mode_tmc_save_callback = None
         self.after(75, self._tmc_ram_poll)
 
     def _tmc_ram_is_busy(self):
@@ -2418,13 +2954,26 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                     self._density_save_progress_popup = False
                     self._xml_loading_finish(error)
                 if operation.startswith('RD3D '):
-                    self._show_object_table_message(
-                        1, messagebox.showerror, 'XML cache', error
+                    callback = (
+                        getattr(self, '_easy_mode_rd3d_save_callback', None)
+                        if operation == 'RD3D Saving' else None
                     )
+                    if callback is not None:
+                        self._easy_mode_rd3d_save_callback = None
+                        callback(False, error)
+                    else:
+                        self._show_object_table_message(
+                            1, messagebox.showerror, 'XML cache', error
+                        )
                 elif operation == 'Saving':
-                    self._show_object_table_message(
-                        2, messagebox.showerror, 'XML cache', error
-                    )
+                    callback = getattr(self, '_easy_mode_tmc_save_callback', None)
+                    if callback is not None:
+                        self._easy_mode_tmc_save_callback = None
+                        callback(None, error)
+                    else:
+                        self._show_object_table_message(
+                            2, messagebox.showerror, 'XML cache', error
+                        )
                 else:
                     messagebox.showerror('XML cache', error)
                 continue
@@ -2471,7 +3020,11 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 saved, changed, errors = result
                 self.tmc_ram_info.set(f"Saved: {saved} files | {changed} changes | {len(errors)} errors")
                 self.status_var.set(self.tmc_ram_info.get())
-                if errors:
+                callback = getattr(self, '_easy_mode_tmc_save_callback', None)
+                if callback is not None:
+                    self._easy_mode_tmc_save_callback = None
+                    callback(result, None)
+                elif errors:
                     self._show_object_table_message(
                         2,
                         messagebox.showwarning,
@@ -2667,10 +3220,15 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         else:
             self.tmc_ram_info.set(f'Objects Table (rd3d) saved: {result} changed paths')
             self.status_var.set(self.tmc_ram_info.get())
-            self._show_object_table_message(
-                1, messagebox.showinfo, 'Objects Table (rd3d)',
-                self.tmc_ram_info.get(),
-            )
+            callback = getattr(self, '_easy_mode_rd3d_save_callback', None)
+            if callback is not None:
+                self._easy_mode_rd3d_save_callback = None
+                callback(True, None)
+            else:
+                self._show_object_table_message(
+                    1, messagebox.showinfo, 'Objects Table (rd3d)',
+                    self.tmc_ram_info.get(),
+                )
             # Do not rebuild Tk variables: edits made after the Save click must
             # remain visible and can be saved with the next snapshot.
             if self.rd3d_ram_cache.path != Path(self.rd3d_file_var.get().strip()):

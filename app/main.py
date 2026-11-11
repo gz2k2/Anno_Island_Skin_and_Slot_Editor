@@ -1,19 +1,13 @@
+
 from __future__ import annotations
 
-from app.functions.function_custom_content import (
-    get_combined_categories,
-    get_combined_object_database,
-    get_combined_regions,
-    get_category_for_object,
-    get_regions_for_category,
-    get_regions_for_object,
-)
+from app.functions.function_custom_content import get_combined_categories, get_combined_object_database, get_category_for_object
 from app.functions.function_region import RegionDetectionMixin
 
 import configparser
 import csv
-import colorsys
-import hashlib
+
+
 import ctypes
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
@@ -28,10 +22,10 @@ import time
 import app.backend.backend_xml as ET
 from app.backend.backend_patch_store import PATCH_STORE
 from app.functions.function_xml_repair import parse_xml_tolerant, sanitize_xml_text
-import webbrowser
+
 import urllib.request
 import urllib.error
-from PIL import Image, ImageTk
+from PIL import Image
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -3474,6 +3468,13 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             config.read(CONFIG_FILE, encoding="utf-8")
             paths = config["Paths"] if config.has_section("Paths") else {}
             options = config["Options"] if config.has_section("Options") else {}
+            self.easy_mode_target_region = options.get(
+                "easy_mode_target_region", "Enbesa"
+            )
+            if self.easy_mode_target_region not in {
+                "Old World", "New World", "Enbesa", "Arctic",
+            }:
+                self.easy_mode_target_region = "Enbesa"
             self.rda_var.set(paths.get("rda_console", ""))
             self.fdb_var.set(paths.get("file_db_reader", ""))
             self._autodetect_tools()
@@ -3524,6 +3525,9 @@ class App(RegionDetectionMixin, UIMixin, ctk.CTk):
             "finalize_backup": str(self.finalize_backup_var.get()),
             "experimental": str(self.experimental_var.get()),
             "tmc_parallel_processes": self.tmc_parallel_var.get().strip() or "4",
+            "easy_mode_target_region": getattr(
+                self, "easy_mode_target_region", "Enbesa"
+            ),
         }
         try:
             with CONFIG_FILE.open("w", encoding="utf-8") as handle:

@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import csv
@@ -99,10 +100,13 @@ class CustomContentTabMixin:
         window.transient(self)
         PopupTemplate.apply_native_titlebar_controls(window)
         window.grid_columnconfigure(0, weight=1)
-        window.grid_rowconfigure(1, weight=1)
+        window.grid_rowconfigure(2, weight=1)
+
+        csv_actions = ctk.CTkFrame(window, fg_color="transparent")
+        csv_actions.grid(row=0, column=0, padx=(20, 44), pady=(10, 0), sticky="e")
 
         inputs = ctk.CTkFrame(window, fg_color="transparent")
-        inputs.grid(row=0, column=0, padx=20, pady=(20, 12), sticky="ew")
+        inputs.grid(row=1, column=0, padx=20, pady=(0, 12), sticky="ew")
         fields = ("name", "type", "guid", "work_area_guid")
         labels = {
             "name": "Name",
@@ -145,7 +149,7 @@ class CustomContentTabMixin:
         update_guid_fields()
 
         table_frame = ctk.CTkFrame(window)
-        table_frame.grid(row=1, column=0, padx=20, pady=(0, 12), sticky="nsew")
+        table_frame.grid(row=2, column=0, padx=20, pady=(0, 12), sticky="nsew")
         table_frame.grid_columnconfigure(0, weight=1)
         table_frame.grid_rowconfigure(0, weight=1)
         columns = fields
@@ -324,13 +328,118 @@ class CustomContentTabMixin:
             state["dirty"] = False
             info.set(f"{len(records)} Slot(s) | Saved: {single_path.name}, {river_path.name}")
 
+        def export_slots_csv():
+            """Export all table rows to a UTF-8 CSV file."""
+            records = validate_rows(table_rows())
+            if records is None:
+                return
+            path = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export Slots CSV",
+                defaultextension=".csv",
+                filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
+                initialfile="custom_slots.csv",
+            )
+            if not path:
+                return
+            try:
+                with open(path, "w", encoding="utf-8-sig", newline="") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(records)
+            except (OSError, UnicodeError, csv.Error) as exc:
+                messagebox.showerror(
+                    "Export CSV", f"Could not export Slots CSV:\n{exc}", parent=window,
+                )
+                return
+            info.set(f"{len(records)} Slot(s) | CSV exported: {Path(path).name}")
+
+        def import_slots_csv():
+            """Import, validate and merge Slot and River Slot CSV records."""
+            path = filedialog.askopenfilename(
+                parent=window,
+                title="Import Slots CSV",
+                filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
+            )
+            if not path:
+                return
+            try:
+                with open(path, "r", encoding="utf-8-sig", newline="") as stream:
+                    reader = csv.DictReader(stream)
+                    headers = [str(header or "").strip() for header in (reader.fieldnames or [])]
+                    missing = [field for field in fields if field not in headers]
+                    if missing:
+                        raise ValueError(
+                            "Missing required CSV column(s): " + ", ".join(missing)
+                        )
+                    imported = [
+                        {field: str(row.get(field, "") or "").strip() for field in fields}
+                        for row in reader
+                        if any(str(row.get(field, "") or "").strip() for field in fields)
+                    ]
+                if not imported:
+                    raise ValueError("The CSV file does not contain any Slot records.")
+            except (OSError, UnicodeError, csv.Error, ValueError) as exc:
+                messagebox.showerror(
+                    "Import CSV", f"Could not import Slots CSV:\n{exc}", parent=window,
+                )
+                return
+
+            current = table_rows()
+            current_by_name = {row["name"].strip().casefold(): index for index, row in enumerate(current)}
+            duplicate_names = sorted({
+                row["name"] for row in imported
+                if row["name"].strip().casefold() in current_by_name
+            })
+            overwrite = False
+            if duplicate_names:
+                overwrite = messagebox.askyesno(
+                    "Import CSV",
+                    f"{len(duplicate_names)} Slot name(s) already exist.\n\n"
+                    "Overwrite the existing entries? Choosing No skips them.",
+                    parent=window,
+                )
+
+            added = overwritten = skipped = 0
+            for record in imported:
+                key = record["name"].strip().casefold()
+                if key in current_by_name:
+                    if not overwrite:
+                        skipped += 1
+                        continue
+                    current[current_by_name[key]] = record
+                    overwritten += 1
+                else:
+                    current_by_name[key] = len(current)
+                    current.append(record)
+                    added += 1
+
+            normalized = validate_rows(current)
+            if normalized is None:
+                return
+            tree.delete(*tree.get_children(""))
+            for record in normalized:
+                insert_record(record)
+            changed()
+            info.set(
+                f"CSV imported: {added} added, {overwritten} overwritten, "
+                f"{skipped} skipped. Click Save to write the Slot changes."
+            )
+
+        ctk.CTkButton(
+            csv_actions, text="Import .csv", width=110, command=import_slots_csv,
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            csv_actions, text="Export .csv", width=110, command=export_slots_csv,
+        ).pack(side="left")
+
         actions = ctk.CTkFrame(inputs, fg_color="transparent")
         actions.grid(row=2, column=0, columnspan=4, pady=(10, 0), sticky="e")
         ctk.CTkButton(actions, text="Add", width=90, command=add).pack(side="left", padx=(0, 8))
         ctk.CTkButton(actions, text="Change", width=90, command=change).pack(side="left")
 
         footer = ctk.CTkFrame(window, fg_color="transparent")
-        footer.grid(row=2, column=0, padx=20, pady=(0, 18), sticky="ew")
+        footer.grid(row=3, column=0, padx=20, pady=(0, 18), sticky="ew")
         footer.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(footer, textvariable=info, anchor="w").grid(row=0, column=0, sticky="w")
         ctk.CTkButton(
@@ -1028,3 +1137,4 @@ class CustomContentTabMixin:
         ).pack(side="left", padx=(0, 8))
         ctk.CTkButton(buttons, text="Apply", width=100, command=apply).pack(side="left")
         PopupTemplate.request_focus(popup, delay_ms=100)
+

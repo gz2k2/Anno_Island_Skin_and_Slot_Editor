@@ -1,5 +1,7 @@
+
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import threading
@@ -89,14 +91,33 @@ class FinalizeTabMixin:
             command=self._export_editor_mod_files,
         )
         self.finalize_export_editor_mod_btn.pack(side="left")
-        ctk.CTkLabel(
-            editor_mod_export_row,
-            text=(
-                'These files are copied to the Anno 1800 "Mod" folder. '
-                "They are required for the islands to function."
-            ),
-            text_color="gray70", justify="left", anchor="w", wraplength=620,
-        ).pack(side="left", padx=(12, 0))
+        self.finalize_editor_mod_version_info_var = tk.StringVar(
+            value='Checking bundled and installed Editor Mod versions...'
+        )
+        version_info_frame = ctk.CTkFrame(editor_mod_export_row, fg_color="transparent")
+        version_info_frame.pack(side="left", padx=(12, 0))
+        self.finalize_editor_mod_version_info_label = ctk.CTkLabel(
+            version_info_frame,
+            textvariable=self.finalize_editor_mod_version_info_var,
+            text_color="gray70", justify="left", anchor="w", wraplength=520,
+        )
+        self.finalize_editor_mod_version_info_label.pack(side="left")
+        self.finalize_editor_mod_status_var = tk.StringVar(value=' | Checking...')
+        self.finalize_editor_mod_status_label = ctk.CTkLabel(
+            version_info_frame,
+            textvariable=self.finalize_editor_mod_status_var,
+            text_color="gray70", justify="left", anchor="w",
+            font=ctk.CTkFont(weight="bold"),
+        )
+        self.finalize_editor_mod_status_label.pack(side="left")
+        # The Finalize tab is built before config.ini has necessarily populated
+        # mod_folder_var. Refresh whenever that variable changes and once again
+        # after startup configuration loading has completed.
+        self._finalize_mod_folder_version_trace = self.mod_folder_var.trace_add(
+            "write", lambda *_args: tab.after_idle(self._refresh_editor_mod_version_info)
+        )
+        tab.after_idle(self._refresh_editor_mod_version_info)
+        tab.after(500, self._refresh_editor_mod_version_info)
 
         controls = ctk.CTkFrame(tab, fg_color="transparent")
         controls.grid(row=3, column=0, padx=5, pady=(0, 10), sticky="ew")
@@ -564,6 +585,86 @@ class FinalizeTabMixin:
             f'Files exported: {len(exported)}\n\n{details}',
         )
 
+    def _editor_mod_source_folder(self):
+        """Return the bundled Editor Mod package exported by Finalize."""
+        return (
+            Path(self.BUNDLE_DIR) / 'data' / 'gamedata'
+            / '[IslandEditor] ModFiles [gz2k2]'
+        )
+
+    @staticmethod
+    def _editor_mod_version(folder):
+        """Read Version from a modinfo.json in or below a mod package folder."""
+        folder = Path(folder)
+        candidates = [folder / 'modinfo.json']
+        if folder.is_dir():
+            candidates.extend(sorted(folder.glob('*/modinfo.json')))
+        for modinfo in candidates:
+            if not modinfo.is_file():
+                continue
+            try:
+                payload = json.loads(modinfo.read_text(encoding='utf-8-sig'))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            version = str(payload.get('Version', '')).strip() if isinstance(payload, dict) else ''
+            if version:
+                return version
+        return None
+
+    def _refresh_editor_mod_version_info(self):
+        """Compare bundled and installed Editor Mod versions at program startup."""
+        variable = getattr(self, 'finalize_editor_mod_version_info_var', None)
+        if variable is None:
+            return
+        source = self._editor_mod_source_folder()
+        bundled_version = self._editor_mod_version(source)
+        mod_folder_text = self.mod_folder_var.get().strip()
+        mod_folder = Path(mod_folder_text).expanduser() if mod_folder_text else None
+        installed_folder = None
+        installed_version = None
+        if mod_folder is not None and mod_folder.is_dir():
+            # Search only for the exact exported mod directory. A typical Anno
+            # mod folder contains many modinfo.json files, so never scan them all.
+            expected_name = source.name
+            direct = mod_folder / expected_name
+            if direct.is_dir():
+                installed_folder = direct
+            else:
+                try:
+                    installed_folder = next(
+                        child for child in mod_folder.iterdir()
+                        if child.is_dir() and child.name.casefold() == expected_name.casefold()
+                    )
+                except (StopIteration, OSError):
+                    installed_folder = None
+            if installed_folder is not None:
+                installed_version = self._editor_mod_version(installed_folder)
+        bundled_text = bundled_version or 'not found'
+        installed_text = installed_version or 'not installed / version not found'
+        installed_location = (
+            f' ({installed_folder.name})' if installed_folder is not None else ''
+        )
+        status = 'Not found'
+        status_color = "#E74C3C"
+        if bundled_version and installed_version:
+            if bundled_version == installed_version:
+                status = 'Up to date'
+                status_color = "#2ECC71"
+            else:
+                status = 'Different version'
+                status_color = "#F1C40F"
+        status_variable = getattr(self, 'finalize_editor_mod_status_var', None)
+        status_label = getattr(self, 'finalize_editor_mod_status_label', None)
+        if status_variable is not None:
+            status_variable.set(f' | {status}')
+        if status_label is not None:
+            status_label.configure(text_color=status_color)
+        variable.set(
+            'These files are required for the islands to function.\n'
+            f'Integrated version: {bundled_text} | Installed version: {installed_text}'
+          #  f'{installed_location}'
+        )
+
     def _export_editor_mod_files(self):
         """Copy the bundled Island Editor mod package into Anno 1800's Mod folder."""
         if self._busy():
@@ -578,10 +679,7 @@ class FinalizeTabMixin:
             )
             return
 
-        source = (
-            Path(self.BUNDLE_DIR) / 'data' / 'gamedata'
-            / '[IslandEditor] ModFiles [gz2k2]'
-        )
+        source = self._editor_mod_source_folder()
         if not source.is_dir():
             messagebox.showerror(
                 'Export Editor Mod Files',
@@ -625,6 +723,7 @@ class FinalizeTabMixin:
 
         exported_count = sum(1 for path in source.rglob('*') if path.is_file())
         self.status_var.set(f'Editor Mod Files exported: {exported_count} file(s)')
+        self._refresh_editor_mod_version_info()
         messagebox.showinfo(
             'Export Editor Mod Files',
             f'Files copied: {exported_count}\n\n{target}',

@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -101,10 +102,10 @@ class TextureSettingsTabMixin:
         preset_table_frame.grid_rowconfigure(0, weight=1)
         table = TreeviewTemplate.create(
             preset_table_frame,
-            columns=("settings", "comment"),
-            headings={"settings": "Brightness", "comment": "Comment"},
-            min_widths={"settings": 100, "comment": 150},
-            max_widths={"settings": 180, "comment": 600},
+            columns=("comment", "settings"),
+            headings={"comment": "Comment", "settings": "Brightness"},
+            min_widths={"comment": 150, "settings": 100},
+            max_widths={"comment": 600, "settings": 180},
             stretch=(),
             selectmode="extended",
             dynamic_width=True,
@@ -130,7 +131,7 @@ class TextureSettingsTabMixin:
     def _tintmap_tree_records(self):
         records = []
         for item in self.tintmap_preset_tree.get_children(""):
-            settings, comment = self.tintmap_preset_tree.item(item, "values")
+            comment, settings = self.tintmap_preset_tree.item(item, "values")
             records.append({"brightness_percent": int(str(settings).rstrip("%")), "comment": str(comment)})
         return validate_tintmap_presets(records)
 
@@ -141,8 +142,8 @@ class TextureSettingsTabMixin:
             tree.insert(
                 "", "end",
                 values=(
-                    self._tintmap_preset_settings(record),
                     record.get("comment", ""),
+                    self._tintmap_preset_settings(record),
                 ),
             )
         children = tree.get_children("")
@@ -221,7 +222,7 @@ class TextureSettingsTabMixin:
         selected = self.tintmap_preset_tree.selection()
         if len(selected) != 1:
             return
-        settings, comment = self.tintmap_preset_tree.item(selected[0], "values")
+        comment, settings = self.tintmap_preset_tree.item(selected[0], "values")
         percent = int(str(settings).rstrip("%"))
         self.tintmap_brightness_slider.set(percent)
         self._on_tintmap_brightness_percent_changed(percent)
