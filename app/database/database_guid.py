@@ -10,7 +10,7 @@ GUID_LABELS = {
     "113750": "Gas Slot",
     "1000029": "Mine Slot (OW)",
     "1000253": "Mine (Work Area 2)",
-    "100419": "Mine (Work Area 1)",
+    "100419": "Mine (Work Area 1 - Cave)",
     "614": "Mine Slot (NW)",
     "618": "Mine Work Area (NW)",
     "116037": "Mine Slot (Arctic)",

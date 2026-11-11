@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -791,6 +792,11 @@ class IslandSlotBaseMixin:
             "state": "normal" if self.slot_map_custom_slot_guids else "disabled",
             "command": lambda e=event: self._island_slot_add_selected_custom_slot_at_event(e),
         })
+        slot_entries.append({
+            "label": "Custom Mining Slot",
+            "state": "normal" if self.slot_map_custom_mining_slot_guids else "disabled",
+            "command": lambda e=event: self._island_slot_add_selected_custom_mining_slot_at_event(e),
+        })
         entries.append({"kind": "cascade", "label": "Add Slot", "entries": slot_entries})
         entries.append({"kind": "separator"})
         entries.append({
@@ -871,6 +877,22 @@ class IslandSlotBaseMixin:
             )
             return
         self._island_slot_add_at_event(event, label)
+
+    def _island_slot_add_selected_custom_mining_slot_at_event(self, event):
+        """Start standard MineSlot placement using the selected custom GUID."""
+        label = self.slot_map_custom_mining_slot_var.get()
+        record = self.slot_map_custom_mining_slot_guids.get(label)
+        if not record:
+            messagebox.showwarning(
+                "Custom Mining Slot", "Select a configured Custom Mining Slot first.",
+                parent=self.slot_map_window,
+            )
+            return
+        self._island_slot_add_mineslot_at_event(
+            event, label, record["guid"],
+            work_area_1_guid=record["work_area_1_guid"],
+            work_area_2_guid=record["work_area_2_guid"],
+        )
 
     def _island_slot_add_custom_at_event(self, event, label, base_type, guid=None):
         if guid is None:

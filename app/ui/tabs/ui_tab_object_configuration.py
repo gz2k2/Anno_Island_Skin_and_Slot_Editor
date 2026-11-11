@@ -599,7 +599,9 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         tree = widgets["tree"]
         tree.tag_configure("rd3d_source", foreground="#5DADE2")
         tree.tag_configure("tmc_source", foreground="#F5B041")
-        state = {"changes": [], "stats": None, "groups": {}}
+        state = {
+            "changes": [], "stats": None, "groups": {}, "unmapped_groups": {},
+        }
 
         unmapped_frame = ctk.CTkFrame(preview_frame, fg_color="transparent")
         unmapped_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
@@ -683,14 +685,17 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                     f"No automatic mapping to {target_region.get()}"
                 )
                 key = (category, reason)
-                unmapped[key] = unmapped.get(key, 0) + 1
+                unmapped.setdefault(key, []).append(sources[position])
             unmapped_tree.delete(*unmapped_tree.get_children(""))
-            for index, ((category, reason), count) in enumerate(sorted(
-                unmapped.items(), key=lambda item: (-item[1], item[0][0].casefold())
+            state["unmapped_groups"] = {}
+            for index, ((category, reason), source_rows) in enumerate(sorted(
+                unmapped.items(), key=lambda item: (-len(item[1]), item[0][0].casefold())
             )):
+                item_id = f"unmapped_{index}"
+                state["unmapped_groups"][item_id] = source_rows
                 unmapped_tree.insert(
-                    "", "end", iid=f"unmapped_{index}",
-                    values=(category, count, reason),
+                    "", "end", iid=item_id,
+                    values=(category, len(source_rows), reason),
                     tags=("neutral" if reason == "Region-neutral category" else "no_mapping",),
                 )
             state["changes"] = [
@@ -723,12 +728,17 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         def update_manual_categories(*_args):
             """List compatible target categories for the selected preview rows."""
             selected = tree.selection()
+            unmapped_selected = unmapped_tree.selection()
             source_families = set()
             for item_id in selected:
                 indices = state["groups"].get(item_id, ())
                 for index in indices:
                     change = state["changes"][index][2]
                     source_families.add(change.source_category.split(maxsplit=1)[0].casefold())
+            for item_id in unmapped_selected:
+                values = unmapped_tree.item(item_id, "values")
+                if values:
+                    source_families.add(str(values[0]).split(maxsplit=1)[0].casefold())
             categories = [
                 category for category in RD3D_CATEGORIES
                 if category_region(category) == target_region.get()
@@ -744,10 +754,11 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         def open_manual_category_picker():
             """Open the shared Mass Replace category selector for selected rows."""
             selected = tree.selection()
-            if not selected:
+            unmapped_selected = unmapped_tree.selection()
+            if not selected and not unmapped_selected:
                 messagebox.showinfo(
                     "Easy Region Conversion",
-                    "Select one or more rows in the preview table first.",
+                    "Select one or more rows in the upper or lower table first.",
                     parent=popup,
                 )
                 return
@@ -758,11 +769,13 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                     source_category = state["changes"][index][2].source_category
                     source_categories.append(source_category)
                     source_families.add(source_category.split(maxsplit=1)[0].casefold())
-            categories = [
-                row for row in self._object_configuration_database_categories()
-                if category_region(row["category"]) == target_region.get()
-                and row["category"].split(maxsplit=1)[0].casefold() in source_families
-            ]
+            for item_id in unmapped_selected:
+                values = unmapped_tree.item(item_id, "values")
+                if values:
+                    source_category = str(values[0])
+                    source_categories.append(source_category)
+                    source_families.add(source_category.split(maxsplit=1)[0].casefold())
+            categories = self._object_configuration_database_categories()
             heading = source_categories[0] if len(set(source_categories)) == 1 else "Selected rows"
             picker_window = CategoryPickerTemplate.create(
                 popup,
@@ -772,7 +785,7 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                 on_select=manual_target.set,
                 title="Select Target Category",
                 initial_filters={
-                    "region": target_region.get(),
+                    "region": CategoryPickerTemplate.FILTER_ALL,
                     "group": CategoryPickerTemplate.FILTER_ALL,
                 },
                 heading_category=heading,
@@ -792,12 +805,13 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
         def apply_manual_target_category():
             """Replace automatic mappings for selected preview groups."""
             selected = tree.selection()
+            unmapped_selected = unmapped_tree.selection()
             target_category = manual_target.get()
             targets = tuple(RD3D_CATEGORIES.get(target_category, ()))
-            if not selected:
+            if not selected and not unmapped_selected:
                 messagebox.showinfo(
                     "Easy Region Conversion",
-                    "Select one or more rows in the preview table first.",
+                    "Select one or more rows in the upper or lower table first.",
                     parent=popup,
                 )
                 return
@@ -837,6 +851,30 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
                         ),
                     )
                     changed_count += 1
+            for item_id in unmapped_selected:
+                source_rows = state["unmapped_groups"].get(item_id, ())
+                for kind, row_index, source_path in source_rows:
+                    target_path = choose_target_path(
+                        source_path, targets, used_paths, variant_mode.get(),
+                    )
+                    if not target_path:
+                        continue
+                    source_category = get_category_for_object(source_path, self.CONFIG_FILE)
+                    state["changes"].append((
+                        kind,
+                        row_index,
+                        RegionConversion(
+                            row_index=row_index,
+                            source_path=source_path,
+                            target_path=target_path,
+                            source_category=source_category,
+                            target_category=target_category,
+                            status="Manual mapping",
+                        ),
+                    ))
+                    changed_count += 1
+            if unmapped_selected:
+                unmapped_tree.selection_remove(*unmapped_selected)
             # Rebuild the grouped preview without recalculating automatic mappings.
             tree.delete(*tree.get_children(""))
             grouped = {}
@@ -857,7 +895,18 @@ class ObjectConfigurationTabMixin(MapSelectionMixin, PlaceObjectMixin):
             summary.set(f"Manually reassigned {changed_count} object mapping(s).")
             update_manual_categories()
 
-        tree.bind("<<TreeviewSelect>>", update_manual_categories, add="+")
+        def upper_selection_changed(*_args):
+            if tree.selection():
+                unmapped_tree.selection_remove(*unmapped_tree.selection())
+            update_manual_categories()
+
+        def lower_selection_changed(*_args):
+            if unmapped_tree.selection():
+                tree.selection_remove(*tree.selection())
+            update_manual_categories()
+
+        tree.bind("<<TreeviewSelect>>", upper_selection_changed, add="+")
+        unmapped_tree.bind("<<TreeviewSelect>>", lower_selection_changed, add="+")
         ctk.CTkButton(
             manual_controls, text="Select Category...", width=145,
             command=open_manual_category_picker,

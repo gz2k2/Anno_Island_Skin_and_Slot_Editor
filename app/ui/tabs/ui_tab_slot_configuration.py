@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,6 +36,7 @@ from app.functions.function_island_slots import (
 from app.functions.function_place_object import world_from_click
 from app.functions.function_custom_river_slots import load_custom_river_slots
 from app.functions.function_custom_slots import load_custom_slots
+from app.functions.function_custom_mining_slots import load_custom_mining_slots
 
 # Slot Map height overlay alpha (0 = transparent, 255 = fully opaque).
 SLOT_MAP_HEIGHTMAP_OPACITY = 205
@@ -109,6 +111,10 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         self.slot_map_custom_slot_guids = {}
         self.slot_map_custom_slot_values = []
         self.slot_map_custom_slot_menu = None
+        self.slot_map_custom_mining_slot_var = tk.StringVar(value="")
+        self.slot_map_custom_mining_slot_guids = {}
+        self.slot_map_custom_mining_slot_values = []
+        self.slot_map_custom_mining_slot_menu = None
         self.combined_slot_window = None
         self.combined_slot_records = []
         self.combined_slot_edit_rows = []
@@ -810,6 +816,31 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                 "Custom Slot", f"Custom Slots could not be loaded:\n{exc}",
                 parent=getattr(self, "slot_map_window", None) or self,
             )
+        try:
+            mining_rows = load_custom_mining_slots(self.CONFIG_FILE)
+        except (OSError, UnicodeError, ValueError) as exc:
+            mining_rows = []
+            messagebox.showwarning(
+                "Custom Mining Slot", f"Custom Mining Slots could not be loaded:\n{exc}",
+                parent=getattr(self, "slot_map_window", None) or self,
+            )
+        self.slot_map_custom_mining_slot_guids = {
+            row["name"]: row
+            for row in sorted(mining_rows, key=lambda record: record["name"].casefold())
+        }
+        self.slot_map_custom_mining_slot_values = list(self.slot_map_custom_mining_slot_guids)
+        if self.slot_map_custom_mining_slot_var.get() not in self.slot_map_custom_mining_slot_guids:
+            self.slot_map_custom_mining_slot_var.set(
+                self.slot_map_custom_mining_slot_values[0]
+                if self.slot_map_custom_mining_slot_values else "No Custom Mining Slots"
+            )
+        mining_menu = getattr(self, "slot_map_custom_mining_slot_menu", None)
+        if mining_menu is not None and mining_menu.winfo_exists():
+            mining_menu.configure(
+                values=self.slot_map_custom_mining_slot_values or ["No Custom Mining Slots"],
+                state="normal" if self.slot_map_custom_mining_slot_values else "disabled",
+            )
+
         self.slot_map_custom_slot_guids = {
             row["name"]: row["guid"]
             for row in sorted(rows, key=lambda record: record["name"].casefold())
@@ -829,7 +860,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
 
     def _slot_map_build_river_type_toolbar(self, toolbar):
         """Place River Slot and Custom Slot selectors below the map heading."""
-        toolbar.grid_columnconfigure(4, weight=1)
+        toolbar.grid_columnconfigure(6, weight=1)
         ctk.CTkLabel(toolbar, text="River Slot Type").grid(
             row=0, column=0, padx=(0, 10), sticky="w",
         )
@@ -850,6 +881,17 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             state="normal" if self.slot_map_custom_slot_values else "disabled",
         )
         self.slot_map_custom_slot_menu.grid(row=0, column=3, sticky="w")
+        ctk.CTkLabel(toolbar, text="Custom Mining Slot:").grid(
+            row=0, column=4, padx=(18, 10), sticky="w",
+        )
+        self.slot_map_custom_mining_slot_menu = ctk.CTkOptionMenu(
+            toolbar,
+            variable=self.slot_map_custom_mining_slot_var,
+            values=self.slot_map_custom_mining_slot_values or ["No Custom Mining Slots"],
+            width=200,
+            state="normal" if self.slot_map_custom_mining_slot_values else "disabled",
+        )
+        self.slot_map_custom_mining_slot_menu.grid(row=0, column=5, sticky="w")
 
     def _slot_map_reload_rd3d(self):
         """Reload RD3D asynchronously and close status only in completion callback."""
@@ -1022,6 +1064,16 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
                     ),
                     None,
                 )
+            if label is None:
+                for custom_name, record in self.slot_map_custom_mining_slot_guids.items():
+                    mining_labels = {
+                        str(record.get("guid", "")): f"Mining Slot ({custom_name})",
+                        str(record.get("work_area_1_guid", "")): f"Mining Slot Work Area 1 - Cave ({custom_name})",
+                        str(record.get("work_area_2_guid", "")): f"Mining Slot Work Area 2 ({custom_name})",
+                    }
+                    label = mining_labels.get(guid)
+                    if label:
+                        break
             if label is None:
                 river_role = RIVER_GUID_ROLE.get(guid)
                 if river_role is not None:

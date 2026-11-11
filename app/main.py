@@ -34,7 +34,7 @@ import customtkinter as ctk
 from app.ui.ui import UIMixin
 from app.templates.template_popup import PopupTemplate
 
-APP_NAME = "Anno 1800 Island Skin and Slot Editor by gz2k2"
+APP_NAME = "Anno 1800 - Simple Island Editor by gz2k2"
 
 try:
     from app.config.config_gamedata import (

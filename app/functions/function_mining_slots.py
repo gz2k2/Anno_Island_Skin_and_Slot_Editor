@@ -1,3 +1,4 @@
+
 """Specialized MineSlot placement methods extracted from function_island_slots."""
 
 from app.functions.function_island_slots import *  # noqa: F401,F403
@@ -149,12 +150,17 @@ class MiningSlotEditingMixin:
         ]
         heights = [height for height in heights if height is not None]
         return max(heights) if heights else None
-    def _island_slot_add_mineslot_at_event(self, event, display_name, guid):
+    def _island_slot_add_mineslot_at_event(
+        self, event, display_name, guid,
+        work_area_1_guid=MINE_CAVE_GUID, work_area_2_guid=MINE_WORKAREA_GUID,
+    ):
         """Enter free two-click MineSlot placement; the menu click is not a placement click."""
         self._island_slot_cancel_mine_placement(silent=True)
         samples, source = self._island_slot_height_samples()
         self._mine_placement = {
             "kind": "mine", "name": display_name, "guid": str(guid),
+            "work_area_1_guid": str(work_area_1_guid),
+            "work_area_2_guid": str(work_area_2_guid),
             "entrance": None, "samples": samples, "source": source,
         }
         self.slot_map_allow_dot_movement_var.set(False)
@@ -175,8 +181,10 @@ class MiningSlotEditingMixin:
         game_root, map_root = game_tree.getroot(), map_tree.getroot()
         container = game_object_container(game_root, map_root)
         target_guid = str(placement["guid"])
-        if target_guid not in MINE_SLOT_GUIDS:
-            raise ValueError(f"Unsupported MineSlot GUID: {target_guid}")
+        cave_guid = str(placement.get("work_area_1_guid", MINE_CAVE_GUID))
+        workarea_guid = str(placement.get("work_area_2_guid", MINE_WORKAREA_GUID))
+        if not target_guid.isdigit() or int(target_guid) <= 0:
+            raise ValueError(f"Invalid MineSlot GUID: {target_guid}")
         # Master logic: every variant starts as the verified native 1000029
         # MineSlot. Only after the complete master object has been configured is
         # its GUID changed to the selected target variant. This guarantees that
@@ -203,7 +211,7 @@ class MiningSlotEditingMixin:
             mountain[0], mountain[1] + self.MINE_WORKAREA_HEIGHT_OFFSET, mountain[2])
         for node, oid, guid, position in (
             (mine, mine_id, target_guid, mine_position),
-            (workarea, work_id, MINE_WORKAREA_GUID, workarea_position),
+            (workarea, work_id, workarea_guid, workarea_position),
         ):
             set_text(node,"ID",oid); set_text(node,"Position",format_position(position))
             guid_node=direct(node,"guid"); guid_node.text=guid
@@ -252,6 +260,7 @@ class MiningSlotEditingMixin:
             midpoint_z,
         )
         set_text(cave, "ID", cave_id)
+        set_text(cave, "guid", cave_guid)
         set_text(cave, "ObjectFolderID", folder)
         set_text(cave, "Position", format_position(cave_midpoint))
 
@@ -547,10 +556,10 @@ class MiningSlotEditingMixin:
                 map_root, MINE_PRIMARY_GROUP, mine_id, target_guid,
                 format_position(mine_position), transaction=transaction)
             append_map_entry(
-                map_root, MINE_WORKAREA_GROUP, work_id, MINE_WORKAREA_GUID,
+                map_root, MINE_WORKAREA_GROUP, work_id, workarea_guid,
                 format_position(workarea_position), transaction=transaction)
             append_map_entry(
-                map_root, MINE_CAVE_GROUP, cave_id, MINE_CAVE_GUID,
+                map_root, MINE_CAVE_GROUP, cave_id, cave_guid,
                 text(cave, "Position"), transaction=transaction)
             group_name = append_mine_object_group(
                 game_root, work_id, mine_id, cave_id, transaction=transaction)
