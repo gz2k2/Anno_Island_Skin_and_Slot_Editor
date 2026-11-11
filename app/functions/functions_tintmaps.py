@@ -1,3 +1,4 @@
+
 """Percentage luminance adjustment of island tintmap DDS files.
 
 The patcher intentionally supports DXT1/BC1 tintmaps only. It keeps a byte-for-byte
@@ -51,7 +52,10 @@ BACKUP_SUFFIX = ".tintmap_original"
 PATCH_STATE_FILENAME = "tintmap_patch_state.json"
 PATCH_ROUTINE_VERSION = 7
 TINTMAP_PRESET_FILENAME = "config_tintmap_brightness_presets.json"
-DEFAULT_TINTMAP_PRESETS = ()
+DEFAULT_TINTMAP_PRESETS = (
+    {"brightness_percent": -25, "comment": "Old World > Enbesa (default)"},
+    {"brightness_percent": -30, "comment": "New World > Enbesa (default)"},
+)
 TINTMAP_MAX_WORKERS = 8
 
 
@@ -88,11 +92,27 @@ def load_tintmap_presets(config_file: str | Path) -> list[dict]:
     """Load percentage presets without reinterpreting old RGB/region settings."""
     path = tintmap_presets_path(config_file)
     if not path.exists():
-        return []
+        return validate_tintmap_presets([
+            dict(record) for record in DEFAULT_TINTMAP_PRESETS
+        ])
     data = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(data, dict) or data.get("schema") != 2:
         raise ValueError("Unsupported brightness preset format.")
-    return validate_tintmap_presets(data.get("presets"))
+    records = validate_tintmap_presets(data.get("presets"))
+    existing = {
+        (record["comment"].casefold(), record["brightness_percent"])
+        for record in records
+    }
+    changed = False
+    for default in DEFAULT_TINTMAP_PRESETS:
+        key = (default["comment"].casefold(), default["brightness_percent"])
+        if key not in existing:
+            records.append(dict(default))
+            existing.add(key)
+            changed = True
+    if changed:
+        save_tintmap_presets(config_file, records)
+    return records
 
 
 def save_tintmap_presets(

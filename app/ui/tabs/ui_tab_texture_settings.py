@@ -210,12 +210,31 @@ class TextureSettingsTabMixin:
         ):
             return
         selected_set = set(selected)
-        records = [
-            record for item, record in zip(
-                self.tintmap_preset_tree.get_children(""),
-                self._tintmap_tree_records(),
-            ) if item not in selected_set
+        protected = {
+            ("old world > enbesa", -25),
+            ("new world > enbesa", -30),
+        }
+        rows = list(zip(
+            self.tintmap_preset_tree.get_children(""),
+            self._tintmap_tree_records(),
+        ))
+        protected_selected = [
+            record for item, record in rows
+            if item in selected_set
+            and (record["comment"].casefold(), record["brightness_percent"]) in protected
         ]
+        if protected_selected:
+            messagebox.showwarning(
+                "Tint Map Settings",
+                "The default Old World > Enbesa and New World > Enbesa settings cannot be deleted."
+            )
+        records = [
+            record for item, record in rows
+            if item not in selected_set
+            or (record["comment"].casefold(), record["brightness_percent"]) in protected
+        ]
+        if len(records) == len(rows):
+            return
         self._save_tintmap_preset_rows(records)
 
     def _on_tintmap_preset_selected(self, _event=None):
