@@ -2276,8 +2276,43 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             for row in custom_slot_rows
             if str(row.get("name", "")).strip() and str(row.get("guid", "")).strip()
         ]
+        try:
+            custom_river_rows = load_custom_river_slots(self.CONFIG_FILE)
+        except (OSError, ValueError, UnicodeError):
+            custom_river_rows = []
+        custom_river_options = []
+        for row in custom_river_rows:
+            name = str(row.get("name", "")).strip()
+            river_guid = str(row.get("river_slot_guid", "")).strip()
+            work_area_guid = str(row.get("work_area_guid", "")).strip()
+            if name and river_guid:
+                custom_river_options.append(f"{name} | {river_guid}")
+            if name and work_area_guid:
+                custom_river_options.append(f"{name} - Work Area | {work_area_guid}")
+        try:
+            custom_mining_rows = load_custom_mining_slots(self.CONFIG_FILE)
+        except (OSError, ValueError, UnicodeError):
+            custom_mining_rows = []
+        custom_mining_options = []
+        for row in custom_mining_rows:
+            name = str(row.get("name", "")).strip()
+            slot_guid = str(row.get("guid", "")).strip()
+            work_area_1_guid = str(row.get("work_area_1_guid", "")).strip()
+            work_area_2_guid = str(row.get("work_area_2_guid", "")).strip()
+            if name and slot_guid:
+                custom_mining_options.append(f"{name} | {slot_guid}")
+            if name and work_area_1_guid:
+                custom_mining_options.append(f"{name} - Work Area 1 (Cave) | {work_area_1_guid}")
+            if name and work_area_2_guid:
+                custom_mining_options.append(f"{name} - Work Area 2 | {work_area_2_guid}")
         to_guid_options = sorted(
-            set([*guid_options, *custom_slot_options, "Custom"]),
+            set([
+                *guid_options,
+                *custom_slot_options,
+                *custom_river_options,
+                *custom_mining_options,
+                "Custom",
+            ]),
             key=str.casefold,
         )
         current_guids = {
@@ -2285,10 +2320,35 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             for record in records
             if record["guid_var"].get().strip()
         }
+        from_guid_labels = {str(guid): label for guid, label in GUID_LABELS.items()}
+        for row in custom_slot_rows:
+            name = str(row.get("name", "")).strip()
+            guid = str(row.get("guid", "")).strip()
+            if name and guid:
+                from_guid_labels[guid] = name
+        for row in custom_river_rows:
+            name = str(row.get("name", "")).strip()
+            river_guid = str(row.get("river_slot_guid", "")).strip()
+            work_area_guid = str(row.get("work_area_guid", "")).strip()
+            if name and river_guid:
+                from_guid_labels[river_guid] = name
+            if name and work_area_guid:
+                from_guid_labels[work_area_guid] = f"{name} - Work Area"
+        for row in custom_mining_rows:
+            name = str(row.get("name", "")).strip()
+            slot_guid = str(row.get("guid", "")).strip()
+            work_area_1_guid = str(row.get("work_area_1_guid", "")).strip()
+            work_area_2_guid = str(row.get("work_area_2_guid", "")).strip()
+            if name and slot_guid:
+                from_guid_labels[slot_guid] = name
+            if name and work_area_1_guid:
+                from_guid_labels[work_area_1_guid] = f"{name} - Work Area 1 (Cave)"
+            if name and work_area_2_guid:
+                from_guid_labels[work_area_2_guid] = f"{name} - Work Area 2"
         from_guid_options = sorted(
             (
-                f"{GUID_LABELS[guid]} | {guid}"
-                if guid in GUID_LABELS else guid
+                f"{from_guid_labels[guid]} | {guid}"
+                if guid in from_guid_labels else guid
                 for guid in current_guids
             ),
             key=str.casefold,
@@ -2598,10 +2658,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             if record["id"] not in self.combined_slot_deleted_ids
             and record["guid_var"].get().strip()
         }
+        guid_labels = self._combined_slot_guid_labels()
         options = sorted(
             (
-                f"{GUID_LABELS[guid]} | {guid}"
-                if guid in GUID_LABELS else guid
+                f"{guid_labels[guid]} | {guid}"
+                if guid in guid_labels else guid
                 for guid in current_guids
             ),
             key=str.casefold,
@@ -2708,11 +2769,37 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             "game_position", "position", "status",
         )).casefold()
 
+    def _combined_slot_guid_labels(self):
+        labels = {str(guid): label for guid, label in GUID_LABELS.items()}
+        try:
+            for row in load_custom_slots(self.CONFIG_FILE):
+                labels[str(row.get("guid", "")).strip()] = str(row.get("name", "")).strip()
+        except (OSError, ValueError, UnicodeError):
+            pass
+        try:
+            for row in load_custom_mining_slots(self.CONFIG_FILE):
+                name = str(row.get("name", "")).strip()
+                labels[str(row.get("guid", "")).strip()] = name
+                labels[str(row.get("work_area_1_guid", "")).strip()] = f"{name} - Work Area 1 (Cave)"
+                labels[str(row.get("work_area_2_guid", "")).strip()] = f"{name} - Work Area 2"
+        except (OSError, ValueError, UnicodeError):
+            pass
+        try:
+            for row in load_custom_river_slots(self.CONFIG_FILE):
+                name = str(row.get("name", "")).strip()
+                labels[str(row.get("river_slot_guid", "")).strip()] = name
+                labels[str(row.get("work_area_guid", "")).strip()] = f"{name} - Work Area"
+        except (OSError, ValueError, UnicodeError):
+            pass
+        return {guid: label for guid, label in labels.items() if guid and label}
+
     def _combined_slot_tree_values(self, record):
         new_pos = " ".join((record["x_var"].get().strip(), record["y_var"].get().strip(), record["z_var"].get().strip()))
         game_guid = str(record.get("game_guid") or "").strip()
+        current_guid = record["guid_var"].get().strip()
+        guid_labels = self._combined_slot_guid_labels()
         return (
-            GUID_LABELS.get(game_guid, ""),
+            guid_labels.get(current_guid) or guid_labels.get(game_guid, ""),
             record["id"], game_guid or "-", record.get("game_position") or "-",
             record.get("guid") or "-", record.get("position") or "-", record.get("status") or "-",
             record["guid_var"].get().strip(), new_pos,
