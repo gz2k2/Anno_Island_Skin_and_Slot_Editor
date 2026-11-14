@@ -120,7 +120,7 @@ class StartTabMixin:
         return Path(sys.argv[0]).resolve().parent
 
     def _original_maps_index_path(self):
-        return self._original_maps_app_folder() / "original_maps_index.csv"
+        return self._original_maps_app_folder() / "original_maps_index.json"
 
     @staticmethod
     def _original_map_region(a7m_path):
@@ -157,6 +157,40 @@ class StartTabMixin:
         matches = (image_index or {}).get(map_name, ())
         return matches[0] if matches else None
 
+    @staticmethod
+    def _original_map_size(a7m_path):
+        a7m_path = Path(a7m_path)
+        a7me_path = a7m_path.with_suffix(".a7me")
+        if not a7me_path.is_file():
+            # Variant A7M files such as island1_river.a7m share the single
+            # base metadata file island1.a7me in the same directory.
+            a7me_files = sorted(
+                (path for path in a7m_path.parent.glob("*.a7me") if path.is_file()),
+                key=lambda path: path.name.casefold(),
+            )
+            if len(a7me_files) == 1:
+                a7me_path = a7me_files[0]
+            else:
+                # If several metadata files exist, use the longest base name
+                # that is a prefix of the A7M variant name.
+                variant_stem = a7m_path.stem.casefold()
+                matching = [
+                    path for path in a7me_files
+                    if variant_stem == path.stem.casefold()
+                    or variant_stem.startswith(path.stem.casefold() + "_")
+                ]
+                if not matching:
+                    return ""
+                a7me_path = max(matching, key=lambda path: len(path.stem))
+        try:
+            import xml.etree.ElementTree as StdET
+            root = StdET.parse(a7me_path).getroot()
+            dimensions = root.find("Dimensions")
+            x_value = dimensions.findtext("X") if dimensions is not None else None
+            return str(x_value or "").strip()
+        except (OSError, StdET.ParseError, UnicodeError):
+            return ""
+
     def _scan_original_maps(self, original_root, progress=None):
         original_root = Path(original_root)
         image_paths = sorted(original_root.rglob("mapimage.png"), key=lambda p: str(p).casefold())
@@ -178,6 +212,7 @@ class StartTabMixin:
                     self._original_map_region(a7m_path),
                     str(a7m_path.resolve()),
                     str(image_path.resolve()) if image_path else "",
+                    self._original_map_size(a7m_path),
                 ))
             if progress:
                 progress(
@@ -187,10 +222,17 @@ class StartTabMixin:
                 )
 
         index_path = self._original_maps_index_path()
-        with index_path.open("w", newline="", encoding="utf-8-sig") as stream:
-            writer = csv.writer(stream, delimiter=";")
-            writer.writerow(("Region", "A7M Path", "Map Image Path"))
-            writer.writerows(rows)
+        index_data = [
+            {
+                "Region": region,
+                "A7M Path": a7m_path,
+                "Map Image Path": map_image_path,
+                "Size": size,
+            }
+            for region, a7m_path, map_image_path, size in rows
+        ]
+        with index_path.open("w", encoding="utf-8") as stream:
+            json.dump(index_data, stream, ensure_ascii=False, indent=2)
         return rows, index_path
 
     def _load_original_maps_index(self, _original_root=None):
@@ -199,14 +241,20 @@ class StartTabMixin:
             return []
         rows = []
         try:
-            with path.open("r", newline="", encoding="utf-8-sig") as stream:
-                for row in csv.DictReader(stream, delimiter=";"):
-                    a7m = (row.get("A7M Path") or "").strip()
-                    image = (row.get("Map Image Path") or "").strip()
-                    region = (row.get("Region") or "").strip()
-                    if a7m:
-                        rows.append((region or self._original_map_region(a7m), a7m, image))
-        except (OSError, UnicodeError, csv.Error):
+            with path.open("r", encoding="utf-8") as stream:
+                data = json.load(stream)
+            if not isinstance(data, list):
+                return []
+            for row in data:
+                if not isinstance(row, dict):
+                    continue
+                a7m = str(row.get("A7M Path") or "").strip()
+                image = str(row.get("Map Image Path") or "").strip()
+                region = str(row.get("Region") or "").strip()
+                size = str(row.get("Size") or "").strip()
+                if a7m:
+                    rows.append((region or self._original_map_region(a7m), a7m, image, size))
+        except (OSError, UnicodeError, json.JSONDecodeError):
             return []
         return rows
 
@@ -281,10 +329,10 @@ class StartTabMixin:
         table_frame.grid(row=3, column=0, padx=(20, 10), pady=(0, 12), sticky="nsew")
         table_frame.grid_columnconfigure(0, weight=1); table_frame.grid_rowconfigure(0, weight=1)
         table = TreeviewTemplate.create(
-            table_frame, columns=("region", "island", "a7m"),
-            headings={"region": "Region", "island": "Island", "a7m": "A7M Path"},
-            min_widths={"region": 70, "island": 90, "a7m": 120},
-            max_widths={"region": 320, "island": 520, "a7m": 2400},
+            table_frame, columns=("region", "island", "size", "a7m"),
+            headings={"region": "Region", "island": "Island", "size": "Size", "a7m": "A7M Path"},
+            min_widths={"region": 70, "island": 90, "size": 55, "a7m": 120},
+            max_widths={"region": 320, "island": 520, "size": 100, "a7m": 2400},
             stretch=(), selectmode="browse", dynamic_width=True, width_padding=24,
         )
         tree = table["tree"]
@@ -369,7 +417,7 @@ class StartTabMixin:
             record = selected_record()
             if record is None:
                 return
-            region, a7m_path, map_image = record
+            region, a7m_path, map_image, size = record
             preview_title.configure(text=f"{Path(a7m_path).stem} | {region}")
             image_path_var.set(map_image or "No mapimage.png found")
             preview_state["path"] = map_image
@@ -386,9 +434,9 @@ class StartTabMixin:
             selected_region = active_region.get()
             visible = [row for row in all_rows if selected_region == "All" or row[0] == selected_region]
             tree.delete(*tree.get_children("")); row_data.clear()
-            for region, a7m_path, map_image in visible:
-                item = tree.insert("", "end", values=(region, Path(a7m_path).stem, a7m_path))
-                row_data[item] = (region, a7m_path, map_image)
+            for region, a7m_path, map_image, size in visible:
+                item = tree.insert("", "end", values=(region, Path(a7m_path).stem, size, a7m_path))
+                row_data[item] = (region, a7m_path, map_image, size)
             tree.schedule_autosize()
             status_var.set(f"{len(visible)} shown / {len(all_rows)} total | Index: {self._original_maps_index_path()}")
             if visible:

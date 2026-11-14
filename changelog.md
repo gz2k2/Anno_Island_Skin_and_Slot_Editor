@@ -1,20 +1,8 @@
 # Changelog
 
-## [v0.122.9]
+## [v0.123.0]
 
-- added lost .csv Import / Export Buttons (Custom Slots)
-
-## [v0.122.8]
-
-### Added
-
-Tab **Object Configuration**:
-- **Easy Mode** added
-
-Tab **Custom Content**:
-- **Custom Mine Slots** added
-- .csv Import / Export Custom Slots
-
-**Slot Map**
-- DropDown **Custom Mine Slots** added
-
+- minor Codefixes
+- optimized NW > Enbesa Materialset
+- "Original Maps" Menu: changed Fileformat from .csv to .json. You need to Re-Scan the Folder. Added "Size" to MapData.
+- Slot Editor: "Custom Slots" are now listed in DropDown Menus

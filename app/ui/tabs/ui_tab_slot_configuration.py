@@ -1052,6 +1052,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         for widget in legend.winfo_children(): widget.destroy()
         counts = {}
         for point in self.slot_map_points: counts[point[1]] = counts.get(point[1], 0) + 1
+        if not counts:
+            # Do not reserve vertical space for an empty GUID legend.
+            legend.grid_remove()
+            return
+        legend.grid()
         for index, guid in enumerate(sorted(counts, key=lambda v: (len(v), v))):
             visible = self.slot_map_guid_visible.get(guid, True); color = self.slot_map_guid_colors[guid]
             label = GUID_LABELS.get(guid)
@@ -2261,9 +2266,35 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         ).grid(row=0, column=0, padx=(0, 8), sticky="w")
         guid_options = [
             f"{label} | {guid}" for guid, label in GUID_LABELS.items()
-        ] + ["Custom"]
-        self.combined_slot_mass_guid_from = tk.StringVar(value=guid_options[0])
-        self.combined_slot_mass_guid_to = tk.StringVar(value=guid_options[0])
+        ]
+        try:
+            custom_slot_rows = load_custom_slots(self.CONFIG_FILE)
+        except (OSError, ValueError, UnicodeError):
+            custom_slot_rows = []
+        custom_slot_options = [
+            f"{row['name']} | {row['guid']}"
+            for row in custom_slot_rows
+            if str(row.get("name", "")).strip() and str(row.get("guid", "")).strip()
+        ]
+        to_guid_options = sorted(
+            set([*guid_options, *custom_slot_options, "Custom"]),
+            key=str.casefold,
+        )
+        current_guids = {
+            record["guid_var"].get().strip()
+            for record in records
+            if record["guid_var"].get().strip()
+        }
+        from_guid_options = sorted(
+            (
+                f"{GUID_LABELS[guid]} | {guid}"
+                if guid in GUID_LABELS else guid
+                for guid in current_guids
+            ),
+            key=str.casefold,
+        ) or [""]
+        self.combined_slot_mass_guid_from = tk.StringVar(value=from_guid_options[0])
+        self.combined_slot_mass_guid_to = tk.StringVar(value=to_guid_options[0])
         self.combined_slot_mass_guid_from_custom = tk.StringVar()
         self.combined_slot_mass_guid_to_custom = tk.StringVar()
         ctk.CTkLabel(mass_guid_bar, text="From:").grid(
@@ -2272,10 +2303,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         from_menu = ctk.CTkOptionMenu(
             mass_guid_bar,
             variable=self.combined_slot_mass_guid_from,
-            values=guid_options,
+            values=from_guid_options,
             width=205,
             command=lambda _value: self._combined_slot_update_mass_custom_fields(),
         )
+        self.combined_slot_mass_from_menu = from_menu
         from_menu.grid(row=0, column=2, padx=(0, 6), sticky="w")
         self.combined_slot_mass_from_custom_entry = ctk.CTkEntry(
             mass_guid_bar,
@@ -2289,10 +2321,11 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         to_menu = ctk.CTkOptionMenu(
             mass_guid_bar,
             variable=self.combined_slot_mass_guid_to,
-            values=guid_options,
+            values=to_guid_options,
             width=205,
             command=lambda _value: self._combined_slot_update_mass_custom_fields(),
         )
+        self.combined_slot_mass_to_menu = to_menu
         to_menu.grid(row=0, column=5, padx=(0, 6), sticky="w")
         self.combined_slot_mass_to_custom_entry = ctk.CTkEntry(
             mass_guid_bar,
@@ -2555,6 +2588,28 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
             record["game_position"] = " ".join(parts)
         self._combined_slot_render()
 
+    def _combined_slot_refresh_mass_guid_options(self):
+        menu = getattr(self, "combined_slot_mass_from_menu", None)
+        if menu is None or not menu.winfo_exists():
+            return
+        current_guids = {
+            record["guid_var"].get().strip()
+            for record in self.combined_slot_records
+            if record["id"] not in self.combined_slot_deleted_ids
+            and record["guid_var"].get().strip()
+        }
+        options = sorted(
+            (
+                f"{GUID_LABELS[guid]} | {guid}"
+                if guid in GUID_LABELS else guid
+                for guid in current_guids
+            ),
+            key=str.casefold,
+        ) or [""]
+        menu.configure(values=options)
+        if self.combined_slot_mass_guid_from.get() not in options:
+            self.combined_slot_mass_guid_from.set(options[0])
+
     @staticmethod
     def _combined_slot_guid_from_mass_selection(selection, custom_value):
         selection = str(selection or "").strip()
@@ -2664,6 +2719,7 @@ class SlotConfigurationTabMixin(IslandSlotEditingMixin):
         )
 
     def _combined_slot_render(self):
+        self._combined_slot_refresh_mass_guid_options()
         tree = getattr(self, "combined_slot_tree", None)
         if tree is None or not tree.winfo_exists():
             return
